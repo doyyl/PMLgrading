@@ -12,12 +12,12 @@ import { routeCategoryLabel } from '@/lib/utils';
 import type { RouteCategory } from '@/types';
 
 const CATEGORIES: { value: RouteCategory | 'ALL'; label: string; color: string }[] = [
-  { value: 'ALL', label: 'All Routes', color: 'bg-gray-100 text-gray-700' },
-  { value: 'Subcontract', label: 'Sub-contract', color: 'bg-purple-100 text-purple-700' },
-  { value: 'BSM_STYROLUTION', label: 'BSM & STYROLUTION', color: 'bg-blue-100 text-blue-700' },
-  { value: 'Shuttle', label: 'Shuttles', color: 'bg-sky-100 text-sky-700' },
-  { value: 'Bulk', label: 'Bulk', color: 'bg-orange-100 text-orange-700' },
-  { value: 'Vanbox', label: 'Vanbox', color: 'bg-teal-100 text-teal-700' },
+  { value: 'ALL',           label: '🗂️ ทั้งหมด',           color: 'bg-gray-100 text-gray-700' },
+  { value: 'Subcontract',   label: '🤝 Subcontract',       color: 'bg-purple-100 text-purple-700' },
+  { value: 'BSM_STYROLUTION', label: '⚗️ BSM / STYROLUTION', color: 'bg-blue-100 text-blue-700' },
+  { value: 'Shuttle',       label: '🚐 Shuttle',            color: 'bg-sky-100 text-sky-700' },
+  { value: 'Bulk',          label: '🏗️ Bulk',              color: 'bg-orange-100 text-orange-700' },
+  { value: 'Vanbox',        label: '📦 Vanbox',             color: 'bg-teal-100 text-teal-700' },
 ];
 
 export function PlanningBoard() {
@@ -48,43 +48,49 @@ export function PlanningBoard() {
   }), [plans]);
 
   return (
-    <div className="flex h-full flex-col gap-4">
+    <div className="flex h-full flex-col gap-3">
       {/* Date picker + stats bar */}
-      <div className="flex flex-wrap items-center gap-4">
+      <div className="flex flex-wrap items-center gap-3 px-4 pt-4 pb-1">
         <div className="flex items-center gap-2">
-          <label className="text-sm font-medium text-gray-600">Plan Date:</label>
+          <label className="text-sm font-semibold text-gray-600">📅 วันที่:</label>
           <input
             type="date"
             value={selectedDate}
             onChange={(e) => setSelectedDate(e.target.value)}
-            className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            className="rounded-xl border-2 border-gray-200 px-3 py-2 text-sm font-semibold focus:border-blue-500 focus:outline-none"
           />
         </div>
-        <div className="flex items-center gap-2 text-sm text-gray-500">
-          <span className="font-medium text-gray-900">{stats.total}</span> plans ·
-          <span className="font-medium text-blue-600">{stats.assigned}</span> assigned ·
-          <span className="font-medium text-indigo-600">{stats.dispatched}</span> dispatched ·
-          <span className="font-medium text-emerald-600">{stats.evTrips}</span> EV ·
-          <span className="font-medium text-red-600">{stats.hazmat}</span> HazMat
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          {[
+            { v: stats.total,     label: 'แผนงาน',       cls: 'bg-gray-100 text-gray-700' },
+            { v: stats.assigned,  label: 'มอบหมายแล้ว',  cls: 'bg-blue-100 text-blue-700' },
+            { v: stats.dispatched,label: 'วิ่งงาน',       cls: 'bg-indigo-100 text-indigo-700' },
+            { v: stats.evTrips,   label: 'EV',            cls: 'bg-emerald-100 text-emerald-700' },
+            { v: stats.hazmat,    label: 'HazMat',        cls: 'bg-red-100 text-red-700' },
+          ].map(s => (
+            <span key={s.label} className={`rounded-full px-2.5 py-1 font-semibold ${s.cls}`}>
+              {s.v} {s.label}
+            </span>
+          ))}
         </div>
       </div>
 
       {/* Category tabs */}
-      <div className="flex flex-wrap gap-2">
+      <div className="flex gap-2 overflow-x-auto px-4 pb-1 scrollbar-none">
         {CATEGORIES.map((cat) => {
           const count = cat.value === 'ALL' ? plans.length : plans.filter((p) => p.route_category === cat.value).length;
           return (
             <button
               key={cat.value}
               onClick={() => setActiveCategory(cat.value)}
-              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+              className={`flex shrink-0 items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-semibold transition-colors ${
                 activeCategory === cat.value
-                  ? cat.color + ' ring-2 ring-offset-1 ring-blue-400'
-                  : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'
+                  ? cat.color + ' ring-2 ring-offset-1 ring-blue-400 shadow-sm'
+                  : 'bg-white border-2 border-gray-100 text-gray-500 hover:border-gray-200'
               }`}
             >
               {cat.label}
-              <span className="rounded-full bg-white/50 px-1.5 py-0.5 text-xs font-semibold">{count}</span>
+              <span className="rounded-full bg-white/60 px-1.5 py-0.5 text-xs font-bold">{count}</span>
             </button>
           );
         })}
@@ -100,9 +106,12 @@ export function PlanningBoard() {
           )}
 
           {!isLoading && Object.keys(grouped).length === 0 && (
-            <div className="flex flex-col items-center justify-center py-20 text-gray-400">
-              <LayoutGrid className="mb-3 h-10 w-10 opacity-30" />
-              <p className="text-sm">No plans found for this date</p>
+            <div className="flex flex-col items-center justify-center py-20 text-gray-400 gap-3">
+              <LayoutGrid className="h-10 w-10 opacity-20" />
+              <p className="text-sm font-medium">ยังไม่มีแผนงานวันนี้</p>
+              <a href="/booking" className="rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 transition-colors">
+                + จองรถใหม่
+              </a>
             </div>
           )}
 

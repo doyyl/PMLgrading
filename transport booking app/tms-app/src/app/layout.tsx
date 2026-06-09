@@ -24,7 +24,7 @@ export default function RootLayout({
       <body className="flex h-screen overflow-hidden bg-gray-50">
         <Providers>
           <Sidebar />
-          <main className="flex-1 overflow-y-auto">
+          <main className="flex-1 overflow-y-auto pt-14 md:pt-0">
             {children}
           </main>
         </Providers>
