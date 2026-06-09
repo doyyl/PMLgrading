@@ -12,7 +12,7 @@ export function useBookings(filters?: { status?: string; date?: string }) {
       const supabase = createClient();
       let q = supabase
         .from('bookings')
-        .select('*, site:sites!site_id(*)')
+        .select('*, site:sites!bookings_site_id_fkey(*)')
         .order('requested_date', { ascending: false });
 
       if (filters?.status) q = q.eq('status', filters.status);
@@ -33,7 +33,7 @@ export function useCreateBooking() {
       const { data, error } = await supabase
         .from('bookings')
         .insert(form)
-        .select('*, site:sites!site_id(*)')
+        .select('*')
         .single();
       if (error) throw new Error(error.message);
       return data as Booking;

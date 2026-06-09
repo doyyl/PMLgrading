@@ -126,7 +126,7 @@ CREATE TABLE bookings (
   id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   booking_ref     TEXT NOT NULL UNIQUE DEFAULT 'BK-' || to_char(NOW(), 'YYYYMMDD') || '-' || LPAD(FLOOR(RANDOM() * 10000)::TEXT, 4, '0'),
   requested_date  DATE NOT NULL,
-  site_id         UUID NOT NULL REFERENCES sites(id),
+  site_id         UUID NOT NULL,
   vehicle_type    vehicle_type NOT NULL,
   cargo_type      cargo_type NOT NULL DEFAULT 'General',
   is_bpa_cargo    BOOLEAN NOT NULL DEFAULT FALSE,
@@ -136,10 +136,13 @@ CREATE TABLE bookings (
   status          booking_status NOT NULL DEFAULT 'Pending',
   requested_by    UUID,
   route_category  route_category,
-  origin_site_id  UUID REFERENCES sites(id),
-  dest_site_id    UUID REFERENCES sites(id),
+  origin_site_id  UUID,
+  dest_site_id    UUID,
   created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT bookings_site_id_fkey       FOREIGN KEY (site_id)        REFERENCES sites(id),
+  CONSTRAINT bookings_origin_site_fkey   FOREIGN KEY (origin_site_id) REFERENCES sites(id),
+  CONSTRAINT bookings_dest_site_fkey     FOREIGN KEY (dest_site_id)   REFERENCES sites(id)
 );
 
 -- ─── DRIVER SHIFTS ──────────────────────────────────────────
