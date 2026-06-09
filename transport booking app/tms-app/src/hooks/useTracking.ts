@@ -14,7 +14,7 @@ export function useActivePlans(date: string) {
       const supabase = createClient();
       const { data, error } = await supabase
         .from('daily_plans')
-        .select('*, driver:drivers(*), vehicle:vehicles(*), booking:bookings(*, site:sites(*))')
+        .select('*, driver:drivers(*), vehicle:vehicles(*), booking:bookings(*, site:sites!site_id(*))')
         .eq('plan_date', date)
         .in('status', ['Dispatched', 'In Progress']);
       if (error) throw new Error(error.message);
