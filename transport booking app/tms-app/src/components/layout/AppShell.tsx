@@ -1,36 +1,27 @@
-'use client';
-
 import { useEffect } from 'react';
-import { usePathname, useRouter } from 'next/navigation';
+import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { Sidebar } from './Sidebar';
 import { useRole } from '@/context/role';
 
-export function AppShell({ children }: { children: React.ReactNode }) {
-  const pathname = usePathname();
+export function AppShell() {
+  const { pathname } = useLocation();
   const { role } = useRole();
-  const router = useRouter();
+  const navigate = useNavigate();
 
-  // ถ้าไม่มี role และไม่ได้อยู่หน้า '/' ให้กลับหน้าหลัก
   useEffect(() => {
     if (!role && pathname !== '/') {
-      router.replace('/');
+      navigate('/', { replace: true });
     }
-  }, [role, pathname, router]);
+  }, [role, pathname, navigate]);
 
-  // หน้า '/' = full-screen landing (ไม่มี sidebar)
-  if (pathname === '/') {
-    return <>{children}</>;
-  }
-
-  // ยังไม่มี role (กำลัง redirect) — render ว่างไว้ก่อน
   if (!role) return null;
 
   return (
-    <>
+    <div className="flex h-screen overflow-hidden bg-gray-50">
       <Sidebar />
       <main className="flex-1 overflow-y-auto pt-14 md:pt-0">
-        {children}
+        <Outlet />
       </main>
-    </>
+    </div>
   );
 }

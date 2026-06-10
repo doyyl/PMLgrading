@@ -1,5 +1,3 @@
-'use client';
-
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -166,7 +164,7 @@ export function BookingWizard() {
           <Button variant="outline" onClick={() => { setForm(INIT); setDone(false); setStep(0); }}>
             จองรถใหม่
           </Button>
-          <Button onClick={() => window.location.href = '/planning'}>
+          <Button onClick={() => { window.location.href = '/planning'; }}>
             ดูแผนงาน →
           </Button>
         </div>

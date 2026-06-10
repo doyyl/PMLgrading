@@ -1,7 +1,6 @@
-'use client';
 
-import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
+
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useState } from 'react';
 import {
   LayoutDashboard, CalendarPlus, MapPin, Activity,
@@ -36,10 +35,10 @@ const ROLE_LABEL: Record<AppRole, { label: string; color: string }> = {
 };
 
 export function Sidebar() {
-  const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
   const { role, driverName } = useRole();
-  const router = useRouter();
+  const navigate = useNavigate();
+  const { pathname } = useLocation();
 
   const nav = role ? NAV_BY_ROLE[role] : NAV_BY_ROLE.admin;
   const roleInfo = role ? ROLE_LABEL[role] : null;
@@ -54,14 +53,14 @@ export function Sidebar() {
           {nav.map(({ href, icon: Icon, th }) => {
             const active = pathname === href || (href !== '/' && pathname.startsWith(href));
             return (
-              <Link key={href} href={href}
+              <Link key={href} to={href}
                 className={cn('flex flex-col items-center rounded-lg p-1.5 text-[10px] font-medium transition-colors',
                   active ? 'bg-blue-50 text-blue-600' : 'text-gray-500 hover:bg-gray-50')}>
                 <Icon className="h-4 w-4" />
               </Link>
             );
           })}
-          <button onClick={() => router.push('/')} className="ml-1 rounded-lg p-1.5 text-gray-400 hover:bg-gray-50">
+          <button onClick={() => navigate('/')} className="ml-1 rounded-lg p-1.5 text-gray-400 hover:bg-gray-50">
             <LogOut className="h-4 w-4" />
           </button>
         </div>
@@ -101,7 +100,7 @@ export function Sidebar() {
           {nav.map(({ href, icon: Icon, th, en }) => {
             const active = pathname === href || (href !== '/' && pathname.startsWith(href));
             return (
-              <Link key={href} href={href}
+              <Link key={href} to={href}
                 title={collapsed ? `${th} (${en})` : undefined}
                 className={cn(
                   'flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium transition-colors',
@@ -122,7 +121,7 @@ export function Sidebar() {
 
         {/* Switch role */}
         <button
-          onClick={() => router.push('/')}
+          onClick={() => navigate('/')}
           className={cn(
             'flex items-center gap-2 border-t border-gray-100 px-4 py-3 text-xs text-gray-400 hover:bg-gray-50 hover:text-red-500 transition-colors',
             collapsed && 'justify-center'
