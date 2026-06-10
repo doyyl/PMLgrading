@@ -1,63 +1,96 @@
-
-
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 
 export type AppRole = 'admin' | 'driver' | 'manager';
 
+export interface AppUser {
+  id: string;
+  username: string;
+  role: AppRole;
+  displayName: string;
+  driverId: string | null;
+}
+
 interface RoleContextValue {
   role: AppRole | null;
+  userId: string | null;
+  displayName: string | null;
   driverId: string | null;
   driverName: string | null;
+  login: (user: AppUser) => void;
+  clearRole: () => void;
+  // legacy helpers kept for existing components
   setRole: (role: AppRole) => void;
   setDriverIdentity: (id: string, name: string) => void;
-  clearRole: () => void;
 }
 
 const RoleContext = createContext<RoleContextValue | null>(null);
 
+const KEYS = {
+  role: 'tms_role',
+  userId: 'tms_user_id',
+  displayName: 'tms_display_name',
+  driverId: 'tms_driver_id',
+} as const;
+
 export function RoleProvider({ children }: { children: ReactNode }) {
   const [role, setRoleState] = useState<AppRole | null>(null);
-  const [driverId, setDriverId] = useState<string | null>(null);
-  const [driverName, setDriverName] = useState<string | null>(null);
+  const [userId, setUserId] = useState<string | null>(null);
+  const [displayName, setDisplayNameState] = useState<string | null>(null);
+  const [driverId, setDriverIdState] = useState<string | null>(null);
 
   useEffect(() => {
-    const stored = localStorage.getItem('tms_role') as AppRole | null;
-    const storedDriverId = localStorage.getItem('tms_driver_id');
-    const storedDriverName = localStorage.getItem('tms_driver_name');
-    if (stored) setRoleState(stored);
-    if (storedDriverId && storedDriverId.length > 0) setDriverId(storedDriverId);
-    if (storedDriverName && storedDriverName.length > 0) setDriverName(storedDriverName);
+    const r = localStorage.getItem(KEYS.role) as AppRole | null;
+    const u = localStorage.getItem(KEYS.userId);
+    const n = localStorage.getItem(KEYS.displayName);
+    const d = localStorage.getItem(KEYS.driverId);
+    if (r) setRoleState(r);
+    if (u) setUserId(u);
+    if (n) setDisplayNameState(n);
+    if (d) setDriverIdState(d);
   }, []);
 
-  const setRole = (r: AppRole) => {
-    setRoleState(r);
-    localStorage.setItem('tms_role', r);
-    if (r !== 'driver') {
-      setDriverId(null);
-      setDriverName(null);
-      localStorage.removeItem('tms_driver_id');
-      localStorage.removeItem('tms_driver_name');
+  const login = (user: AppUser) => {
+    setRoleState(user.role);
+    setUserId(user.id);
+    setDisplayNameState(user.displayName);
+    setDriverIdState(user.driverId);
+    localStorage.setItem(KEYS.role, user.role);
+    localStorage.setItem(KEYS.userId, user.id);
+    localStorage.setItem(KEYS.displayName, user.displayName);
+    if (user.driverId) {
+      localStorage.setItem(KEYS.driverId, user.driverId);
+    } else {
+      localStorage.removeItem(KEYS.driverId);
     }
-  };
-
-  const setDriverIdentity = (id: string, name: string) => {
-    setDriverId(id);
-    setDriverName(name);
-    localStorage.setItem('tms_driver_id', id);
-    localStorage.setItem('tms_driver_name', name);
   };
 
   const clearRole = () => {
     setRoleState(null);
-    setDriverId(null);
-    setDriverName(null);
-    localStorage.removeItem('tms_role');
-    localStorage.removeItem('tms_driver_id');
+    setUserId(null);
+    setDisplayNameState(null);
+    setDriverIdState(null);
+    Object.values(KEYS).forEach(k => localStorage.removeItem(k));
     localStorage.removeItem('tms_driver_name');
   };
 
+  const setRole = (r: AppRole) => {
+    setRoleState(r);
+    localStorage.setItem(KEYS.role, r);
+  };
+
+  const setDriverIdentity = (id: string, name: string) => {
+    setDriverIdState(id);
+    setDisplayNameState(name);
+    localStorage.setItem(KEYS.driverId, id);
+    localStorage.setItem('tms_driver_name', name);
+  };
+
   return (
-    <RoleContext.Provider value={{ role, driverId, driverName, setRole, setDriverIdentity, clearRole }}>
+    <RoleContext.Provider value={{
+      role, userId, displayName, driverId,
+      driverName: displayName,
+      login, clearRole, setRole, setDriverIdentity,
+    }}>
       {children}
     </RoleContext.Provider>
   );

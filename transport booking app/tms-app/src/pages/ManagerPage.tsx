@@ -1,39 +1,43 @@
-
-
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { createClient } from '@/lib/supabase/client';
-import type { Booking, DailyPlan, Driver, Vehicle } from '@/types';
+import { useAllPlansWithTrips, useDriverWorkload } from '@/hooks/useTrips';
+import type { Booking, Driver, Vehicle } from '@/types';
 import { cn } from '@/lib/utils';
-import { Truck, Users, Calendar, Activity, RefreshCw, ChevronDown, ChevronUp } from 'lucide-react';
+import {
+  Truck, Users, Calendar, Activity, RefreshCw,
+  ChevronDown, ChevronUp, BarChart3, CheckCircle2, Clock, AlertTriangle,
+} from 'lucide-react';
 
 // ── Data hooks ────────────────────────────────────────────────
 
 function useManagerStats() {
   return useQuery({
     queryKey: ['manager-stats'],
+    refetchInterval: 30_000,
     queryFn: async () => {
       const supabase = createClient();
       const today = new Date().toISOString().split('T')[0];
       const [bookings, plans, drivers, vehicles, alerts] = await Promise.all([
-        supabase.from('bookings').select('id, status', { count: 'exact' }),
-        supabase.from('transport_plans').select('id, status, plan_date').eq('plan_date', today),
-        supabase.from('drivers').select('id', { count: 'exact' }).eq('active', true),
-        supabase.from('vehicles').select('id', { count: 'exact' }).eq('active', true),
+        supabase.from('bookings').select('id, status'),
+        supabase.from('daily_plans').select('id, status').eq('plan_date', today),
+        supabase.from('drivers').select('id', { count: 'exact', head: true }).eq('active', true),
+        supabase.from('vehicles').select('id', { count: 'exact', head: true }).eq('active', true),
         supabase.from('trip_events').select('id', { count: 'exact', head: true }).eq('acknowledged', false),
       ]);
       const planData = plans.data ?? [];
+      const bookingData = bookings.data ?? [];
       return {
-        totalBookings:    bookings.count ?? 0,
-        pendingBookings:  (bookings.data ?? []).filter(b => b.status === 'Pending').length,
-        todayDispatched:  planData.filter(p => p.status === 'Dispatched').length,
-        todayCompleted:   planData.filter(p => p.status === 'Completed').length,
-        activeDrivers:    drivers.count ?? 0,
-        activeVehicles:   vehicles.count ?? 0,
-        unackedAlerts:    alerts.count ?? 0,
+        totalBookings:   bookingData.length,
+        pendingBookings: bookingData.filter(b => b.status === 'Pending').length,
+        todayDispatched: planData.filter(p => p.status === 'Dispatched' || p.status === 'Assigned').length,
+        todayCompleted:  planData.filter(p => p.status === 'Completed').length,
+        todayPending:    planData.filter(p => p.status === 'Draft').length,
+        activeDrivers:   drivers.count ?? 0,
+        activeVehicles:  vehicles.count ?? 0,
+        unackedAlerts:   alerts.count ?? 0,
       };
     },
-    refetchInterval: 30_000,
   });
 }
 
@@ -52,29 +56,12 @@ function useAllBookings() {
   });
 }
 
-function useAllPlans() {
-  return useQuery({
-    queryKey: ['manager-plans'],
-    queryFn: async () => {
-      const { data, error } = await createClient()
-        .from('transport_plans')
-        .select('*, booking:bookings!transport_plans_booking_id_fkey(booking_ref, cargo_type), driver:drivers(name), vehicle:vehicles(plate_number, vehicle_type)')
-        .order('plan_date', { ascending: false })
-        .limit(100);
-      if (error) throw new Error(error.message);
-      return data as DailyPlan[];
-    },
-  });
-}
-
 function useAllDrivers() {
   return useQuery({
     queryKey: ['manager-drivers'],
     queryFn: async () => {
       const { data, error } = await createClient()
-        .from('drivers')
-        .select('*')
-        .order('name');
+        .from('drivers').select('*').order('name');
       if (error) throw new Error(error.message);
       return data as Driver[];
     },
@@ -86,9 +73,7 @@ function useAllVehicles() {
     queryKey: ['manager-vehicles'],
     queryFn: async () => {
       const { data, error } = await createClient()
-        .from('vehicles')
-        .select('*')
-        .order('plate_number');
+        .from('vehicles').select('*').order('plate_number');
       if (error) throw new Error(error.message);
       return data as Vehicle[];
     },
@@ -118,9 +103,7 @@ function Badge({ status }: { status: string }) {
 function StatCard({ icon, label, value, sub, color }: { icon: React.ReactNode; label: string; value: number | string; sub?: string; color: string }) {
   return (
     <div className={cn('rounded-2xl p-4 text-white shadow-md', color)}>
-      <div className="flex items-center justify-between mb-2">
-        <div className="opacity-80">{icon}</div>
-      </div>
+      <div className="mb-2 opacity-80">{icon}</div>
       <p className="text-3xl font-bold leading-none">{value}</p>
       <p className="text-sm mt-1 opacity-90 font-medium">{label}</p>
       {sub && <p className="text-xs mt-0.5 opacity-70">{sub}</p>}
@@ -128,136 +111,320 @@ function StatCard({ icon, label, value, sub, color }: { icon: React.ReactNode; l
   );
 }
 
-type Tab = 'bookings' | 'plans' | 'drivers' | 'vehicles';
-
-function SortableHeader({ label, field, sort, onSort }: { label: string; field: string; sort: { field: string; asc: boolean }; onSort: (f: string) => void }) {
+function SortableHeader({ label, field, sort, onSort }: {
+  label: string; field: string;
+  sort: { field: string; asc: boolean }; onSort: (f: string) => void;
+}) {
   const active = sort.field === field;
   return (
-    <th
-      className="px-3 py-2 text-left text-xs font-bold text-gray-500 uppercase tracking-wider cursor-pointer select-none hover:text-gray-800"
-      onClick={() => onSort(field)}
-    >
+    <th className="px-3 py-2 text-left text-xs font-bold text-gray-500 uppercase tracking-wider cursor-pointer hover:text-gray-800"
+      onClick={() => onSort(field)}>
       <span className="flex items-center gap-1">
         {label}
-        {active ? (sort.asc ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />) : null}
+        {active && (sort.asc ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />)}
       </span>
     </th>
   );
 }
 
-// ── Page ────────────────────────────────────────────────────
+type Tab = 'jobs' | 'bookings' | 'drivers' | 'vehicles' | 'workload';
+
+// ── Jobs Tab ─────────────────────────────────────────────────
+
+function JobsTab({ search }: { search: string }) {
+  const { data: plans = [], isLoading } = useAllPlansWithTrips();
+  const q = search.toLowerCase();
+
+  const filtered = plans.filter(p => {
+    if (!q) return true;
+    const bk = p.booking as any;
+    const dr = p.driver as any;
+    return (
+      bk?.booking_ref?.toLowerCase().includes(q) ||
+      bk?.customer?.toLowerCase().includes(q) ||
+      dr?.name?.toLowerCase().includes(q) ||
+      p.status?.toLowerCase().includes(q)
+    );
+  });
+
+  const groups = {
+    'Dispatched / In Progress': filtered.filter(p => p.status === 'Dispatched'),
+    'Assigned': filtered.filter(p => p.status === 'Assigned'),
+    'Completed': filtered.filter(p => p.status === 'Completed'),
+    'Draft / รอมอบหมาย': filtered.filter(p => p.status === 'Draft'),
+    'Cancelled': filtered.filter(p => p.status === 'Cancelled'),
+  };
+
+  const groupIcons: Record<string, React.ReactNode> = {
+    'Dispatched / In Progress': <Truck className="h-4 w-4 text-blue-500" />,
+    'Assigned': <Clock className="h-4 w-4 text-amber-500" />,
+    'Completed': <CheckCircle2 className="h-4 w-4 text-emerald-500" />,
+    'Draft / รอมอบหมาย': <AlertTriangle className="h-4 w-4 text-gray-400" />,
+    'Cancelled': <Activity className="h-4 w-4 text-red-400" />,
+  };
+
+  if (isLoading) return (
+    <div className="space-y-3 p-4">
+      {[1,2,3].map(i => <div key={i} className="h-16 rounded-xl bg-gray-100 animate-pulse" />)}
+    </div>
+  );
+
+  return (
+    <div className="p-4 space-y-6">
+      {Object.entries(groups).map(([group, items]) => {
+        if (items.length === 0) return null;
+        return (
+          <div key={group}>
+            <div className="flex items-center gap-2 mb-2">
+              {groupIcons[group]}
+              <p className="text-sm font-bold text-gray-700">{group}</p>
+              <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-bold text-gray-500">
+                {items.length}
+              </span>
+            </div>
+            <div className="rounded-2xl border border-gray-100 overflow-hidden">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 border-b border-gray-100">
+                  <tr>
+                    <th className="px-3 py-2 text-left text-xs font-bold text-gray-500 uppercase">วันที่</th>
+                    <th className="px-3 py-2 text-left text-xs font-bold text-gray-500 uppercase">Booking</th>
+                    <th className="px-3 py-2 text-left text-xs font-bold text-gray-500 uppercase">ลูกค้า</th>
+                    <th className="px-3 py-2 text-left text-xs font-bold text-gray-500 uppercase">พนักงาน</th>
+                    <th className="px-3 py-2 text-left text-xs font-bold text-gray-500 uppercase">เที่ยว</th>
+                    <th className="px-3 py-2 text-left text-xs font-bold text-gray-500 uppercase">สถานะ</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {items.map((p: any) => {
+                    const trips = (p.trips ?? []) as Array<{ id: string; status: string }>;
+                    const done = trips.filter(t => t.status === 'completed').length;
+                    return (
+                      <tr key={p.id} className="hover:bg-gray-50 transition-colors">
+                        <td className="px-3 py-2.5 text-gray-600 whitespace-nowrap text-xs">
+                          {new Date(p.plan_date).toLocaleDateString('th-TH', { day: 'numeric', month: 'short' })}
+                        </td>
+                        <td className="px-3 py-2.5 font-mono text-xs font-semibold text-gray-700">
+                          {p.booking?.booking_ref ?? '–'}
+                        </td>
+                        <td className="px-3 py-2.5 text-gray-700 max-w-[120px] truncate text-xs">
+                          {p.booking?.customer ?? '–'}
+                        </td>
+                        <td className="px-3 py-2.5 text-gray-800 text-xs">
+                          {p.driver?.name ?? <span className="text-gray-400 italic">ยังไม่มอบหมาย</span>}
+                        </td>
+                        <td className="px-3 py-2.5 text-xs">
+                          {trips.length > 0
+                            ? <span className={cn('font-semibold', done === trips.length ? 'text-emerald-600' : 'text-gray-700')}>
+                                {done}/{trips.length}
+                              </span>
+                            : <span className="text-gray-300">–</span>
+                          }
+                        </td>
+                        <td className="px-3 py-2.5"><Badge status={p.status} /></td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        );
+      })}
+      {filtered.length === 0 && (
+        <p className="text-center py-8 text-sm text-gray-400">ไม่พบข้อมูล</p>
+      )}
+    </div>
+  );
+}
+
+// ── Workload Tab ─────────────────────────────────────────────
+
+function WorkloadTab() {
+  const { data: workload = [], isLoading } = useDriverWorkload();
+
+  if (isLoading) return (
+    <div className="space-y-3 p-4">
+      {[1,2,3].map(i => <div key={i} className="h-16 rounded-xl bg-gray-100 animate-pulse" />)}
+    </div>
+  );
+
+  if (workload.length === 0) {
+    return <p className="text-center py-12 text-sm text-gray-400">ยังไม่มีข้อมูลภาระงาน</p>;
+  }
+
+  return (
+    <div className="p-4">
+      <div className="rounded-2xl border border-gray-100 overflow-hidden">
+        <table className="w-full text-sm">
+          <thead className="bg-gray-50 border-b border-gray-100">
+            <tr>
+              <th className="px-3 py-2.5 text-left text-xs font-bold text-gray-500 uppercase">พนักงานขับรถ</th>
+              <th className="px-3 py-2.5 text-center text-xs font-bold text-gray-500 uppercase">งานทั้งหมด</th>
+              <th className="px-3 py-2.5 text-center text-xs font-bold text-gray-500 uppercase">กำลังทำ</th>
+              <th className="px-3 py-2.5 text-center text-xs font-bold text-gray-500 uppercase">เสร็จแล้ว</th>
+              <th className="px-3 py-2.5 text-center text-xs font-bold text-gray-500 uppercase">เที่ยวทั้งหมด</th>
+              <th className="px-3 py-2.5 text-center text-xs font-bold text-gray-500 uppercase">เที่ยวเสร็จ</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-50">
+            {workload.map(w => (
+              <tr key={w.driver.id} className="hover:bg-gray-50 transition-colors">
+                <td className="px-3 py-3 font-medium text-gray-900">{w.driver.name}</td>
+                <td className="px-3 py-3 text-center font-bold text-gray-700">{w.total}</td>
+                <td className="px-3 py-3 text-center">
+                  <span className={cn('rounded-full px-2 py-0.5 text-xs font-semibold',
+                    w.inProgress > 0 ? 'bg-blue-100 text-blue-700' : 'text-gray-400')}>
+                    {w.inProgress}
+                  </span>
+                </td>
+                <td className="px-3 py-3 text-center">
+                  <span className={cn('rounded-full px-2 py-0.5 text-xs font-semibold',
+                    w.completed > 0 ? 'bg-emerald-100 text-emerald-700' : 'text-gray-400')}>
+                    {w.completed}
+                  </span>
+                </td>
+                <td className="px-3 py-3 text-center text-gray-700">{w.totalTrips}</td>
+                <td className="px-3 py-3 text-center">
+                  <span className={cn('font-semibold text-sm',
+                    w.completedTrips === w.totalTrips && w.totalTrips > 0
+                      ? 'text-emerald-600'
+                      : 'text-gray-700')}>
+                    {w.completedTrips}
+                    {w.totalTrips > 0 && <span className="text-gray-400 font-normal text-xs">/{w.totalTrips}</span>}
+                  </span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// ── Main Page ─────────────────────────────────────────────────
 
 export default function ManagerPage() {
-  const [tab, setTab] = useState<Tab>('bookings');
+  const [tab, setTab] = useState<Tab>('jobs');
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState<{ field: string; asc: boolean }>({ field: '', asc: true });
 
   const { data: stats, isLoading: statsLoading, refetch: refetchStats } = useManagerStats();
   const { data: bookings } = useAllBookings();
-  const { data: plans } = useAllPlans();
   const { data: drivers } = useAllDrivers();
   const { data: vehicles } = useAllVehicles();
 
-  const handleSort = (field: string) => {
+  const handleSort = (field: string) =>
     setSort(prev => prev.field === field ? { field, asc: !prev.asc } : { field, asc: true });
-  };
 
   const q = search.toLowerCase();
 
   const filteredBookings = (bookings ?? []).filter(b =>
     !q || b.booking_ref.toLowerCase().includes(q) || b.site?.site_name?.toLowerCase().includes(q) || b.status.toLowerCase().includes(q)
   );
-
-  const filteredPlans = (plans ?? []).filter(p =>
-    !q || p.booking?.booking_ref?.toLowerCase().includes(q) || p.driver?.name?.toLowerCase().includes(q) || p.vehicle?.plate_number?.toLowerCase().includes(q) || p.status.toLowerCase().includes(q)
-  );
-
   const filteredDrivers = (drivers ?? []).filter(d =>
-    !q || d.name.toLowerCase().includes(q) || d.driver_category.toLowerCase().includes(q) || d.license_type.toLowerCase().includes(q)
+    !q || d.name.toLowerCase().includes(q) || d.driver_category.toLowerCase().includes(q)
   );
-
   const filteredVehicles = (vehicles ?? []).filter(v =>
-    !q || v.plate_number.toLowerCase().includes(q) || v.vehicle_type.toLowerCase().includes(q) || v.ownership.toLowerCase().includes(q)
+    !q || v.plate_number.toLowerCase().includes(q) || v.vehicle_type.toLowerCase().includes(q)
   );
 
-  const TABS: { id: Tab; label: string; count: number }[] = [
-    { id: 'bookings', label: 'คำจอง', count: bookings?.length ?? 0 },
-    { id: 'plans',    label: 'แผนงาน', count: plans?.length ?? 0 },
-    { id: 'drivers',  label: 'พนักงาน', count: drivers?.length ?? 0 },
-    { id: 'vehicles', label: 'รถ',      count: vehicles?.length ?? 0 },
+  const TABS: { id: Tab; label: string; count?: number }[] = [
+    { id: 'jobs',     label: 'งานทั้งหมด' },
+    { id: 'workload', label: 'ภาระงาน' },
+    { id: 'bookings', label: 'คำจอง',    count: bookings?.length },
+    { id: 'drivers',  label: 'พนักงาน',  count: drivers?.length },
+    { id: 'vehicles', label: 'รถ',        count: vehicles?.length },
   ];
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-6 space-y-6">
+    <div className="mx-auto max-w-6xl px-4 py-6 space-y-5">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">ภาพรวมระบบ</h1>
-          <p className="text-sm text-gray-500 mt-0.5">ข้อมูลทั้งหมดแบบ real-time</p>
+          <p className="text-sm text-gray-500">ข้อมูลแบบ real-time</p>
         </div>
         <button
           onClick={() => refetchStats()}
           className="flex items-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-600 hover:bg-gray-50 shadow-sm"
         >
-          <RefreshCw className="h-4 w-4" />
-          รีเฟรช
+          <RefreshCw className="h-4 w-4" /> รีเฟรช
         </button>
       </div>
 
-      {/* Stats grid */}
+      {/* Stats */}
       {statsLoading ? (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {[1,2,3,4].map(i => <div key={i} className="h-24 rounded-2xl bg-gray-100 animate-pulse" />)}
         </div>
       ) : stats && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <StatCard icon={<Calendar className="h-5 w-5" />} label="คำจองทั้งหมด"    value={stats.totalBookings}    sub={`รอ ${stats.pendingBookings} รายการ`} color="bg-blue-600" />
-          <StatCard icon={<Truck className="h-5 w-5" />}    label="วิ่งงานวันนี้"     value={stats.todayDispatched}  sub={`สำเร็จ ${stats.todayCompleted} รายการ`} color="bg-emerald-600" />
-          <StatCard icon={<Users className="h-5 w-5" />}    label="พนักงานขับรถ"      value={stats.activeDrivers}    sub="ที่ active" color="bg-indigo-600" />
-          <StatCard icon={<Activity className="h-5 w-5" />} label="แจ้งเตือนค้าง"    value={stats.unackedAlerts}    sub={`รถ ${stats.activeVehicles} คัน`} color={stats.unackedAlerts > 0 ? 'bg-red-500' : 'bg-gray-500'} />
+          <StatCard icon={<Calendar className="h-5 w-5" />} label="คำจองทั้งหมด"
+            value={stats.totalBookings} sub={`รอ ${stats.pendingBookings}`} color="bg-blue-600" />
+          <StatCard icon={<Truck className="h-5 w-5" />} label="วิ่งงานวันนี้"
+            value={stats.todayDispatched} sub={`สำเร็จ ${stats.todayCompleted}`} color="bg-emerald-600" />
+          <StatCard icon={<AlertTriangle className="h-5 w-5" />} label="รอมอบหมาย"
+            value={stats.todayPending} sub="งานวันนี้" color={stats.todayPending > 0 ? 'bg-amber-500' : 'bg-gray-500'} />
+          <StatCard icon={<Users className="h-5 w-5" />} label="พนักงานขับรถ"
+            value={stats.activeDrivers} sub={`รถ ${stats.activeVehicles} คัน`} color="bg-indigo-600" />
         </div>
       )}
 
       {/* Search + Tabs */}
       <div className="space-y-3">
-        <input
-          type="text"
-          placeholder="ค้นหา..."
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          className="w-full rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-        />
+        {tab !== 'jobs' && tab !== 'workload' && (
+          <input
+            type="text"
+            placeholder="ค้นหา..."
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            className="w-full rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        )}
+        {(tab === 'jobs') && (
+          <input
+            type="text"
+            placeholder="ค้นหาลูกค้า, เลขจอง, พนักงาน..."
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            className="w-full rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        )}
         <div className="flex gap-2 overflow-x-auto pb-1">
           {TABS.map(t => (
-            <button
-              key={t.id}
-              onClick={() => setTab(t.id)}
+            <button key={t.id} onClick={() => setTab(t.id)}
               className={cn(
                 'flex items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-semibold whitespace-nowrap transition-colors',
                 tab === t.id ? 'bg-blue-600 text-white shadow-sm' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'
-              )}
-            >
+              )}>
               {t.label}
-              <span className={cn('rounded-full px-1.5 py-0.5 text-xs font-bold', tab === t.id ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-500')}>
-                {t.count}
-              </span>
+              {t.count !== undefined && (
+                <span className={cn('rounded-full px-1.5 py-0.5 text-xs font-bold',
+                  tab === t.id ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-500')}>
+                  {t.count}
+                </span>
+              )}
             </button>
           ))}
         </div>
       </div>
 
-      {/* Table area */}
+      {/* Content */}
       <div className="rounded-2xl border border-gray-100 bg-white shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
-          {tab === 'bookings' && (
+        {tab === 'jobs' && <JobsTab search={search} />}
+        {tab === 'workload' && <WorkloadTab />}
+
+        {tab === 'bookings' && (
+          <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-gray-50 border-b border-gray-100">
                 <tr>
                   <SortableHeader label="Ref" field="booking_ref" sort={sort} onSort={handleSort} />
                   <SortableHeader label="วันที่" field="requested_date" sort={sort} onSort={handleSort} />
-                  <th className="px-3 py-2 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">สถานที่</th>
-                  <th className="px-3 py-2 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">ประเภทรถ</th>
-                  <th className="px-3 py-2 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">สินค้า</th>
+                  <th className="px-3 py-2 text-left text-xs font-bold text-gray-500 uppercase">สถานที่</th>
+                  <th className="px-3 py-2 text-left text-xs font-bold text-gray-500 uppercase">ลูกค้า</th>
+                  <th className="px-3 py-2 text-left text-xs font-bold text-gray-500 uppercase">ประเภทรถ</th>
                   <SortableHeader label="สถานะ" field="status" sort={sort} onSort={handleSort} />
                 </tr>
               </thead>
@@ -265,12 +432,12 @@ export default function ManagerPage() {
                 {filteredBookings.map(b => (
                   <tr key={b.id} className="hover:bg-gray-50 transition-colors">
                     <td className="px-3 py-3 font-mono text-xs font-semibold text-gray-700">{b.booking_ref}</td>
-                    <td className="px-3 py-3 text-gray-600 whitespace-nowrap">
+                    <td className="px-3 py-3 text-gray-600 whitespace-nowrap text-xs">
                       {new Date(b.requested_date).toLocaleDateString('th-TH', { day: 'numeric', month: 'short' })}
                     </td>
-                    <td className="px-3 py-3 text-gray-800 max-w-[160px] truncate">{b.site?.site_name ?? '–'}</td>
-                    <td className="px-3 py-3 text-gray-600">{b.vehicle_type}</td>
-                    <td className="px-3 py-3 text-gray-600">{b.cargo_type}{b.is_bpa_cargo && <span className="ml-1 text-xs text-orange-500 font-semibold">BPA</span>}</td>
+                    <td className="px-3 py-3 text-gray-800 max-w-[140px] truncate text-xs">{b.site?.site_name ?? '–'}</td>
+                    <td className="px-3 py-3 text-gray-700 text-xs">{b.customer ?? '–'}</td>
+                    <td className="px-3 py-3 text-gray-600 text-xs">{b.vehicle_type}</td>
                     <td className="px-3 py-3"><Badge status={b.status} /></td>
                   </tr>
                 ))}
@@ -279,66 +446,36 @@ export default function ManagerPage() {
                 )}
               </tbody>
             </table>
-          )}
+          </div>
+        )}
 
-          {tab === 'plans' && (
+        {tab === 'drivers' && (
+          <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-gray-50 border-b border-gray-100">
                 <tr>
-                  <SortableHeader label="วันที่" field="plan_date" sort={sort} onSort={handleSort} />
-                  <th className="px-3 py-2 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Booking</th>
-                  <th className="px-3 py-2 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">พนักงานขับ</th>
-                  <th className="px-3 py-2 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">ทะเบียนรถ</th>
-                  <th className="px-3 py-2 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">เส้นทาง</th>
-                  <SortableHeader label="สถานะ" field="status" sort={sort} onSort={handleSort} />
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50">
-                {filteredPlans.map(p => (
-                  <tr key={p.id} className="hover:bg-gray-50 transition-colors">
-                    <td className="px-3 py-3 text-gray-600 whitespace-nowrap">
-                      {new Date(p.plan_date).toLocaleDateString('th-TH', { day: 'numeric', month: 'short' })}
-                    </td>
-                    <td className="px-3 py-3 font-mono text-xs font-semibold text-gray-700">{p.booking?.booking_ref ?? '–'}</td>
-                    <td className="px-3 py-3 text-gray-800">{p.driver?.name ?? <span className="text-gray-400">ยังไม่มอบหมาย</span>}</td>
-                    <td className="px-3 py-3 text-gray-600">{p.vehicle?.plate_number ?? '–'}</td>
-                    <td className="px-3 py-3 text-gray-600 text-xs">{p.route_category}</td>
-                    <td className="px-3 py-3"><Badge status={p.status} /></td>
-                  </tr>
-                ))}
-                {filteredPlans.length === 0 && (
-                  <tr><td colSpan={6} className="px-3 py-8 text-center text-sm text-gray-400">ไม่พบข้อมูล</td></tr>
-                )}
-              </tbody>
-            </table>
-          )}
-
-          {tab === 'drivers' && (
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50 border-b border-gray-100">
-                <tr>
-                  <th className="px-3 py-2 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">ชื่อ</th>
-                  <th className="px-3 py-2 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">ประเภท</th>
-                  <th className="px-3 py-2 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">ใบขับขี่</th>
-                  <th className="px-3 py-2 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">เบอร์โทร</th>
-                  <th className="px-3 py-2 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">ADR หมดอายุ</th>
-                  <th className="px-3 py-2 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">สถานะ</th>
+                  <th className="px-3 py-2 text-left text-xs font-bold text-gray-500 uppercase">ชื่อ</th>
+                  <th className="px-3 py-2 text-left text-xs font-bold text-gray-500 uppercase">ประเภท</th>
+                  <th className="px-3 py-2 text-left text-xs font-bold text-gray-500 uppercase">ใบขับขี่</th>
+                  <th className="px-3 py-2 text-left text-xs font-bold text-gray-500 uppercase">เบอร์โทร</th>
+                  <th className="px-3 py-2 text-left text-xs font-bold text-gray-500 uppercase">ADR</th>
+                  <th className="px-3 py-2 text-left text-xs font-bold text-gray-500 uppercase">สถานะ</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
                 {filteredDrivers.map(d => {
-                  const adrExpired = d.adr_certificate_expiry && new Date(d.adr_certificate_expiry) < new Date();
+                  const expired = d.adr_certificate_expiry && new Date(d.adr_certificate_expiry) < new Date();
                   return (
                     <tr key={d.id} className="hover:bg-gray-50 transition-colors">
                       <td className="px-3 py-3 font-medium text-gray-900">{d.name}</td>
-                      <td className="px-3 py-3 text-gray-600">{d.driver_category}</td>
-                      <td className="px-3 py-3 text-gray-600">{d.license_type}</td>
-                      <td className="px-3 py-3 text-gray-500">{d.phone ?? '–'}</td>
+                      <td className="px-3 py-3 text-gray-600 text-xs">{d.driver_category}</td>
+                      <td className="px-3 py-3 text-gray-600 text-xs">{d.license_type}</td>
+                      <td className="px-3 py-3 text-gray-500 text-xs">{d.phone ?? '–'}</td>
                       <td className="px-3 py-3">
                         {d.adr_certificate_expiry
-                          ? <span className={cn('text-xs', adrExpired ? 'text-red-600 font-semibold' : 'text-gray-500')}>
+                          ? <span className={cn('text-xs', expired ? 'text-red-600 font-semibold' : 'text-gray-500')}>
                               {new Date(d.adr_certificate_expiry).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' })}
-                              {adrExpired && ' ⚠️'}
+                              {expired && ' ⚠️'}
                             </span>
                           : <span className="text-gray-300 text-xs">–</span>
                         }
@@ -356,46 +493,43 @@ export default function ManagerPage() {
                 )}
               </tbody>
             </table>
-          )}
+          </div>
+        )}
 
-          {tab === 'vehicles' && (
+        {tab === 'vehicles' && (
+          <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-gray-50 border-b border-gray-100">
                 <tr>
-                  <th className="px-3 py-2 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">ทะเบียน</th>
-                  <th className="px-3 py-2 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">ประเภท</th>
-                  <th className="px-3 py-2 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">เจ้าของ</th>
-                  <th className="px-3 py-2 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">พลังงาน</th>
-                  <th className="px-3 py-2 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Battery</th>
-                  <th className="px-3 py-2 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">สถานะ</th>
+                  <th className="px-3 py-2 text-left text-xs font-bold text-gray-500 uppercase">ทะเบียน</th>
+                  <th className="px-3 py-2 text-left text-xs font-bold text-gray-500 uppercase">ประเภท</th>
+                  <th className="px-3 py-2 text-left text-xs font-bold text-gray-500 uppercase">เจ้าของ</th>
+                  <th className="px-3 py-2 text-left text-xs font-bold text-gray-500 uppercase">พลังงาน</th>
+                  <th className="px-3 py-2 text-left text-xs font-bold text-gray-500 uppercase">Battery</th>
+                  <th className="px-3 py-2 text-left text-xs font-bold text-gray-500 uppercase">สถานะ</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
                 {filteredVehicles.map(v => (
                   <tr key={v.id} className="hover:bg-gray-50 transition-colors">
                     <td className="px-3 py-3 font-mono font-semibold text-gray-900">{v.plate_number}</td>
-                    <td className="px-3 py-3 text-gray-600">{v.vehicle_type}</td>
-                    <td className="px-3 py-3 text-gray-600">{v.ownership}</td>
+                    <td className="px-3 py-3 text-gray-600 text-xs">{v.vehicle_type}</td>
+                    <td className="px-3 py-3 text-gray-600 text-xs">{v.ownership}</td>
                     <td className="px-3 py-3">
                       <span className={cn('text-xs font-semibold', v.powertrain === 'EV' ? 'text-emerald-600' : 'text-gray-500')}>
                         {v.powertrain === 'EV' ? '⚡ EV' : '⛽ Diesel'}
                       </span>
                     </td>
                     <td className="px-3 py-3">
-                      {v.powertrain === 'EV' && v.battery_soc != null
-                        ? (
-                          <div className="flex items-center gap-2">
-                            <div className="w-16 h-2 rounded-full bg-gray-200 overflow-hidden">
-                              <div
-                                className={cn('h-full rounded-full', v.battery_soc >= 50 ? 'bg-emerald-500' : v.battery_soc >= 20 ? 'bg-amber-400' : 'bg-red-500')}
-                                style={{ width: `${v.battery_soc}%` }}
-                              />
-                            </div>
-                            <span className="text-xs text-gray-500">{v.battery_soc}%</span>
+                      {v.powertrain === 'EV' && v.battery_soc != null ? (
+                        <div className="flex items-center gap-2">
+                          <div className="w-16 h-2 rounded-full bg-gray-200 overflow-hidden">
+                            <div className={cn('h-full rounded-full', v.battery_soc >= 50 ? 'bg-emerald-500' : v.battery_soc >= 20 ? 'bg-amber-400' : 'bg-red-500')}
+                              style={{ width: `${v.battery_soc}%` }} />
                           </div>
-                        )
-                        : <span className="text-gray-300 text-xs">–</span>
-                      }
+                          <span className="text-xs text-gray-500">{v.battery_soc}%</span>
+                        </div>
+                      ) : <span className="text-gray-300 text-xs">–</span>}
                     </td>
                     <td className="px-3 py-3">
                       <span className={cn('rounded-full px-2 py-0.5 text-xs font-semibold', v.active ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-600')}>
@@ -409,8 +543,8 @@ export default function ManagerPage() {
                 )}
               </tbody>
             </table>
-          )}
-        </div>
+          </div>
+        )}
       </div>
     </div>
   );
