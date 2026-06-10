@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { useState } from 'react';
 import {
   LayoutDashboard, CalendarPlus, MapPin, Activity,
@@ -38,7 +38,8 @@ const ROLE_LABEL: Record<AppRole, { label: string; color: string }> = {
 export function Sidebar() {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
-  const { role, driverName, clearRole } = useRole();
+  const { role, driverName } = useRole();
+  const router = useRouter();
 
   const nav = role ? NAV_BY_ROLE[role] : NAV_BY_ROLE.admin;
   const roleInfo = role ? ROLE_LABEL[role] : null;
@@ -60,7 +61,7 @@ export function Sidebar() {
               </Link>
             );
           })}
-          <button onClick={clearRole} className="ml-1 rounded-lg p-1.5 text-gray-400 hover:bg-gray-50">
+          <button onClick={() => router.push('/')} className="ml-1 rounded-lg p-1.5 text-gray-400 hover:bg-gray-50">
             <LogOut className="h-4 w-4" />
           </button>
         </div>
@@ -121,7 +122,7 @@ export function Sidebar() {
 
         {/* Switch role */}
         <button
-          onClick={clearRole}
+          onClick={() => router.push('/')}
           className={cn(
             'flex items-center gap-2 border-t border-gray-100 px-4 py-3 text-xs text-gray-400 hover:bg-gray-50 hover:text-red-500 transition-colors',
             collapsed && 'justify-center'

@@ -1,131 +1,145 @@
 'use client';
 
-import Link from 'next/link';
-import { useQuery } from '@tanstack/react-query';
-import { CalendarPlus, MapPin, Activity, Leaf, AlertTriangle, ChevronRight, Truck, Clock, CheckCircle2 } from 'lucide-react';
-import { createClient } from '@/lib/supabase/client';
+import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { useRole, type AppRole } from '@/context/role';
 
-function useDashboardStats() {
-  return useQuery({
-    queryKey: ['dashboard-stats'],
-    queryFn: async () => {
-      const supabase = createClient();
-      const today = new Date().toISOString().split('T')[0];
-      const [bookings, dispatched, alerts] = await Promise.all([
-        supabase.from('transport_plans').select('id', { count: 'exact', head: true }).eq('plan_date', today).eq('status', 'Draft'),
-        supabase.from('transport_plans').select('id', { count: 'exact', head: true }).eq('plan_date', today).eq('status', 'Dispatched'),
-        supabase.from('trip_events').select('id', { count: 'exact', head: true }).eq('acknowledged', false).in('severity', ['Critical', 'Warning']),
-      ]);
-      return {
-        pending:    bookings.count  ?? 0,
-        active:     dispatched.count ?? 0,
-        alerts:     alerts.count   ?? 0,
-      };
-    },
-    refetchInterval: 30_000,
-  });
+interface RoleConfig {
+  role: AppRole;
+  icon: string;
+  title: string;
+  titleEn: string;
+  subtitle: string;
+  features: string[];
+  redirect: string;
+  gradient: string;
+  iconBg: string;
+  badge: string;
 }
 
-const QUICK_ACTIONS = [
+const ROLES: RoleConfig[] = [
   {
-    href: '/booking',
-    icon: '➕',
-    bg: 'bg-blue-600',
-    label: 'จองรถใหม่',
-    sub: 'เพิ่มคำขอขนส่ง',
-  },
-  {
-    href: '/planning',
+    role: 'admin',
     icon: '📋',
-    bg: 'bg-indigo-600',
-    label: 'วางแผนงาน',
-    sub: 'มอบหมาย พขร. & รถ',
+    title: 'Admin',
+    titleEn: 'Dispatcher',
+    subtitle: 'จัดการงานจองและวางแผนขนส่ง',
+    features: ['จองรถขนส่ง', 'วางแผนมอบหมายงาน', 'ดู dashboard ประจำวัน'],
+    redirect: '/booking',
+    gradient: 'from-blue-500 to-blue-700',
+    iconBg: 'bg-blue-600',
+    badge: 'bg-blue-100 text-blue-700',
   },
   {
-    href: '/tracking',
-    icon: '📡',
-    bg: 'bg-emerald-600',
-    label: 'ติดตามรถ',
-    sub: 'ดูสถานะเรียลไทม์',
+    role: 'driver',
+    icon: '🚛',
+    title: 'พนักงานขับรถ',
+    titleEn: 'Driver',
+    subtitle: 'ดูตารางกะและงานที่ได้รับมอบหมาย',
+    features: ['ตารางกะงานรายสัปดาห์', 'งานวันนี้และที่จะมาถึง', 'รายละเอียดเส้นทาง'],
+    redirect: '/driver',
+    gradient: 'from-emerald-500 to-emerald-700',
+    iconBg: 'bg-emerald-600',
+    badge: 'bg-emerald-100 text-emerald-700',
   },
   {
-    href: '/tracking/sustainability',
-    icon: '🌿',
-    bg: 'bg-teal-600',
-    label: 'CO₂ / EV',
-    sub: 'รายงานความยั่งยืน',
+    role: 'manager',
+    icon: '📊',
+    title: 'ผู้จัดการระบบ',
+    titleEn: 'System Manager',
+    subtitle: 'ภาพรวมข้อมูลทั้งหมดแบบ real-time',
+    features: ['สถิติและ KPI ประจำวัน', 'ข้อมูลรถ พขร. และงาน', 'ติดตามและรายงาน'],
+    redirect: '/manager',
+    gradient: 'from-purple-500 to-purple-700',
+    iconBg: 'bg-purple-600',
+    badge: 'bg-purple-100 text-purple-700',
   },
 ];
 
-function TodayBanner() {
-  const { data: stats } = useDashboardStats();
-  const dateStr = new Date().toLocaleDateString('th-TH', {
-    weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
-  });
+export default function LandingPage() {
+  const { clearRole, setRole } = useRole();
+  const router = useRouter();
+
+  // เคลียร์ role เก่าทุกครั้งที่เปิดหน้านี้
+  useEffect(() => {
+    clearRole();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  function handleSelect(cfg: RoleConfig) {
+    setRole(cfg.role);
+    router.push(cfg.redirect);
+  }
 
   return (
-    <div className="rounded-2xl bg-blue-600 px-5 py-5 text-white shadow-lg shadow-blue-200">
-      <p className="text-xs font-medium text-blue-200 mb-1">{dateStr}</p>
-      <p className="text-xl font-bold mb-4">สวัสดี, วันนี้มีงานอะไรบ้าง?</p>
-      <div className="grid grid-cols-3 gap-3">
-        {[
-          { icon: <Clock className="h-4 w-4" />, value: stats?.pending ?? '–', label: 'รอมอบหมาย', color: 'bg-blue-500' },
-          { icon: <Truck className="h-4 w-4" />, value: stats?.active ?? '–', label: 'กำลังวิ่งงาน', color: 'bg-blue-500' },
-          { icon: <AlertTriangle className="h-4 w-4" />, value: stats?.alerts ?? '–', label: 'แจ้งเตือนค้าง', color: stats?.alerts ? 'bg-red-500' : 'bg-blue-500' },
-        ].map((s, i) => (
-          <div key={i} className={`${s.color} rounded-xl px-3 py-3 text-center`}>
-            <div className="flex justify-center mb-1 opacity-80">{s.icon}</div>
-            <p className="text-2xl font-bold leading-none">{String(s.value)}</p>
-            <p className="text-[11px] text-blue-100 mt-1 leading-tight">{s.label}</p>
+    <div className="flex-1 h-full overflow-y-auto bg-gradient-to-br from-slate-900 via-blue-950 to-slate-900 flex flex-col">
+      {/* Top bar */}
+      <header className="flex items-center gap-3 px-6 py-5">
+        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-500 text-white font-black text-sm shadow-lg shadow-blue-500/30">
+          TMS
+        </div>
+        <div>
+          <p className="text-white font-bold text-sm leading-tight">KNS Logistics</p>
+          <p className="text-blue-300 text-xs">Transport Management System</p>
+        </div>
+      </header>
+
+      {/* Main */}
+      <main className="flex flex-1 flex-col items-center justify-center px-4 py-8">
+        {/* Headline */}
+        <div className="mb-10 text-center">
+          <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-blue-500/30 bg-blue-500/10 px-4 py-1.5">
+            <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+            <span className="text-xs font-medium text-blue-300">ระบบพร้อมใช้งาน</span>
           </div>
-        ))}
-      </div>
-    </div>
-  );
-}
+          <h1 className="text-3xl font-black text-white leading-tight">เข้าสู่ระบบ</h1>
+          <p className="mt-2 text-blue-300 text-sm">เลือกบทบาทของคุณเพื่อเริ่มใช้งาน</p>
+        </div>
 
-export default function DashboardPage() {
-  return (
-    <div className="mx-auto max-w-xl px-4 py-6 space-y-6">
-      {/* Today banner */}
-      <TodayBanner />
+        {/* Role cards */}
+        <div className="w-full max-w-4xl grid grid-cols-1 md:grid-cols-3 gap-4">
+          {ROLES.map((cfg) => (
+            <button
+              key={cfg.role}
+              onClick={() => handleSelect(cfg)}
+              className="group relative flex flex-col rounded-2xl border border-white/10 bg-white/5 p-6 text-left backdrop-blur-sm transition-all duration-200 hover:bg-white/10 hover:border-white/20 hover:scale-[1.02] hover:shadow-2xl active:scale-[0.99] focus:outline-none"
+            >
+              {/* Role badge */}
+              <div className="mb-5 flex items-center justify-between">
+                <div className={`flex h-14 w-14 items-center justify-center rounded-2xl ${cfg.iconBg} text-3xl shadow-lg`}>
+                  {cfg.icon}
+                </div>
+                <span className={`rounded-full px-3 py-1 text-xs font-bold ${cfg.badge}`}>
+                  {cfg.titleEn}
+                </span>
+              </div>
 
-      {/* Quick actions */}
-      <div>
-        <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3 px-1">เมนูหลัก</p>
-        <div className="grid grid-cols-2 gap-3">
-          {QUICK_ACTIONS.map(a => (
-            <Link key={a.href} href={a.href}
-              className="flex flex-col gap-3 rounded-2xl border-2 border-gray-100 bg-white p-4 shadow-sm hover:border-blue-200 hover:shadow-md transition-all active:scale-95">
-              <div className={`flex h-11 w-11 items-center justify-center rounded-xl ${a.bg} text-2xl shadow-sm`}>
-                {a.icon}
+              {/* Title */}
+              <h2 className="text-lg font-black text-white mb-1">{cfg.title}</h2>
+              <p className="text-sm text-blue-200 mb-5 leading-snug">{cfg.subtitle}</p>
+
+              {/* Features */}
+              <ul className="space-y-2 mb-6">
+                {cfg.features.map((f, i) => (
+                  <li key={i} className="flex items-center gap-2 text-sm text-slate-300">
+                    <span className="h-1.5 w-1.5 rounded-full bg-blue-400 shrink-0" />
+                    {f}
+                  </li>
+                ))}
+              </ul>
+
+              {/* CTA */}
+              <div className={`mt-auto flex items-center justify-between rounded-xl bg-gradient-to-r ${cfg.gradient} px-4 py-3`}>
+                <span className="text-sm font-bold text-white">เข้าใช้งาน</span>
+                <span className="text-white text-lg">→</span>
               </div>
-              <div>
-                <p className="font-bold text-gray-900 text-sm">{a.label}</p>
-                <p className="text-xs text-gray-400 mt-0.5">{a.sub}</p>
-              </div>
-              <ChevronRight className="h-4 w-4 text-gray-300 self-end mt-auto" />
-            </Link>
+            </button>
           ))}
         </div>
-      </div>
 
-      {/* Status guide */}
-      <div className="rounded-2xl border border-gray-100 bg-gray-50 p-4 space-y-2">
-        <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">สถานะงาน</p>
-        {[
-          { dot: 'bg-gray-400',   label: 'Draft',      th: 'รอมอบหมาย พขร. และรถ' },
-          { dot: 'bg-amber-400',  label: 'Assigned',   th: 'มอบหมายแล้ว รอ Dispatch' },
-          { dot: 'bg-blue-500',   label: 'Dispatched', th: 'รถออกวิ่งแล้ว' },
-          { dot: 'bg-emerald-500',label: 'Completed',  th: 'ส่งงานสำเร็จ มี ePOD' },
-        ].map(s => (
-          <div key={s.label} className="flex items-center gap-3">
-            <div className={`h-2.5 w-2.5 rounded-full ${s.dot} shrink-0`} />
-            <span className="text-sm font-semibold text-gray-700 w-20">{s.label}</span>
-            <span className="text-sm text-gray-500">{s.th}</span>
-          </div>
-        ))}
-      </div>
+        <p className="mt-10 text-xs text-slate-500 text-center">
+          KNS Transport · Hazardous Logistics &amp; EV Fleet Management
+        </p>
+      </main>
     </div>
   );
 }

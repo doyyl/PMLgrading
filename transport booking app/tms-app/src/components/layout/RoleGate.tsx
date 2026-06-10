@@ -65,7 +65,7 @@ export function RoleGate({ children }: { children: React.ReactNode }) {
 
   if (!role) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-950 to-slate-900 flex flex-col">
+      <div className="flex-1 h-full overflow-y-auto bg-gradient-to-br from-slate-900 via-blue-950 to-slate-900 flex flex-col">
         {/* Top bar */}
         <header className="flex items-center gap-3 px-6 py-5">
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-500 text-white font-black text-sm shadow-lg shadow-blue-500/30">
