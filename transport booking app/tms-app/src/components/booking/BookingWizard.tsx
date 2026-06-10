@@ -30,6 +30,7 @@ interface WizardState {
   customer: string;
   loading_place: string;
   delivery_place: string;
+  is_round_trip: boolean;
   order_remark: string;
   // Step 3
   truck_type: string;
@@ -49,7 +50,7 @@ const today = new Date().toISOString().split('T')[0];
 
 const INIT: WizardState = {
   requested_date: today, reserve_date: today, shift: 'DAY', csr_contact: '',
-  site: '', customer: '', loading_place: '', delivery_place: '', order_remark: '',
+  site: '', customer: '', loading_place: '', delivery_place: '', is_round_trip: false, order_remark: '',
   truck_type: '', activity: 'Transfer',
   day_trips: '', night_trips: '',
   day_time_from: '07:00', day_time_to: '19:00',
@@ -121,21 +122,28 @@ export function BookingWizard() {
     (parseInt(form.night_trips || '0') || 0);
 
   async function submit() {
-    const siteRow = sitesDb.find(s =>
-      s.site_name === form.loading_place || s.site_name === form.site
-    );
+    const originSite = sitesDb.find(s => s.site_name === form.loading_place);
+    const destSite   = sitesDb.find(s => s.site_name === form.delivery_place);
+    // site_id = destination first, then origin, then first available
+    const siteRow = destSite ?? originSite ?? sitesDb[0];
+
+    const notesParts = [
+      form.is_round_trip ? '[ไปกลับ]' : '[เที่ยวเดียว]',
+      form.order_remark || '',
+    ].filter(Boolean);
+
     await createBooking.mutateAsync({
-      requested_date: form.requested_date,
-      site_id: siteRow?.id ?? sitesDb[0]?.id ?? '',
+      requested_date: form.reserve_date,   // ← fixed: was form.requested_date
+      site_id: siteRow?.id ?? '',
       vehicle_type: TRUCK_TYPES.find(t => t.value === form.truck_type)?.category ?? 'Shuttle',
       cargo_type: isBpa ? 'BPA' : isHazmat ? 'Chemical' : 'General',
       is_bpa_cargo: isBpa,
       quantity: totalTrips || undefined,
       unit: 'trips',
-      notes: form.order_remark || undefined,
+      notes: notesParts.join(' ') || undefined,
       route_category: routeCategoryFromTruckType(form.truck_type) as RouteCategory,
-      origin_site_id: sitesDb.find(s => s.site_name === form.loading_place)?.id,
-      dest_site_id:   sitesDb.find(s => s.site_name === form.delivery_place)?.id,
+      origin_site_id: originSite?.id,
+      dest_site_id:   destSite?.id,
     });
     setDone(true);
   }
@@ -149,8 +157,10 @@ export function BookingWizard() {
         </div>
         <p className="text-xl font-bold text-gray-900">จองรถสำเร็จ!</p>
         <p className="text-sm text-gray-500">
-          {form.customer} · {form.loading_place} → {form.delivery_place}<br />
-          {form.reserve_date} · {totalTrips} เที่ยว
+          {form.customer} · {form.is_round_trip
+            ? `${form.loading_place} ⇄ ${form.delivery_place}`
+            : `${form.loading_place} → ${form.delivery_place}`}<br />
+          {form.reserve_date} · {totalTrips} เที่ยว {form.is_round_trip && '· ไปกลับ'}
         </p>
         <div className="flex gap-3 pt-2">
           <Button variant="outline" onClick={() => { setForm(INIT); setDone(false); setStep(0); }}>
@@ -293,23 +303,60 @@ export function BookingWizard() {
           )}
 
           {/* Manual route */}
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-gray-600">จุดรับของ <span className="text-red-500">*</span></label>
-              <select value={form.loading_place} onChange={e => set('loading_place', e.target.value)}
-                className="w-full rounded-xl border-2 border-gray-200 px-3 py-2.5 text-sm focus:border-blue-500 focus:outline-none">
-                <option value="">เลือก...</option>
-                {LOADING_PLACES.map(p => <option key={p}>{p}</option>)}
-              </select>
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-gray-600">จุดรับของ <span className="text-red-500">*</span></label>
+                <select value={form.loading_place} onChange={e => set('loading_place', e.target.value)}
+                  className="w-full rounded-xl border-2 border-gray-200 px-3 py-2.5 text-sm focus:border-blue-500 focus:outline-none">
+                  <option value="">เลือก...</option>
+                  {LOADING_PLACES.map(p => <option key={p}>{p}</option>)}
+                </select>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-gray-600">จุดส่งของ <span className="text-red-500">*</span></label>
+                <select value={form.delivery_place} onChange={e => set('delivery_place', e.target.value)}
+                  className="w-full rounded-xl border-2 border-gray-200 px-3 py-2.5 text-sm focus:border-blue-500 focus:outline-none">
+                  <option value="">เลือก...</option>
+                  {DELIVERY_PLACES.map(p => <option key={p}>{p}</option>)}
+                </select>
+              </div>
             </div>
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-gray-600">จุดส่งของ <span className="text-red-500">*</span></label>
-              <select value={form.delivery_place} onChange={e => set('delivery_place', e.target.value)}
-                className="w-full rounded-xl border-2 border-gray-200 px-3 py-2.5 text-sm focus:border-blue-500 focus:outline-none">
-                <option value="">เลือก...</option>
-                {DELIVERY_PLACES.map(p => <option key={p}>{p}</option>)}
-              </select>
-            </div>
+
+            {/* Round-trip toggle */}
+            <button
+              type="button"
+              onClick={() => set('is_round_trip', !form.is_round_trip)}
+              className={cn(
+                'flex w-full items-center justify-between rounded-xl border-2 px-4 py-3 transition-all',
+                form.is_round_trip
+                  ? 'border-blue-500 bg-blue-50'
+                  : 'border-gray-200 bg-white hover:border-gray-300'
+              )}
+            >
+              <div className="flex items-center gap-3">
+                <span className="text-xl">{form.is_round_trip ? '🔄' : '➡️'}</span>
+                <div className="text-left">
+                  <p className={cn('text-sm font-semibold', form.is_round_trip ? 'text-blue-700' : 'text-gray-700')}>
+                    {form.is_round_trip ? 'ไปกลับ (Round Trip)' : 'เที่ยวเดียว (One Way)'}
+                  </p>
+                  <p className="text-xs text-gray-400">
+                    {form.is_round_trip
+                      ? `${form.loading_place || '?'} → ${form.delivery_place || '?'} → ${form.loading_place || '?'}`
+                      : `${form.loading_place || '?'} → ${form.delivery_place || '?'}`}
+                  </p>
+                </div>
+              </div>
+              <div className={cn(
+                'h-6 w-11 rounded-full transition-colors',
+                form.is_round_trip ? 'bg-blue-500' : 'bg-gray-300'
+              )}>
+                <div className={cn(
+                  'h-5 w-5 rounded-full bg-white shadow-sm transition-transform mt-0.5',
+                  form.is_round_trip ? 'translate-x-5' : 'translate-x-0.5'
+                )} />
+              </div>
+            </button>
           </div>
 
           <div className="space-y-1.5">
@@ -462,7 +509,10 @@ export function BookingWizard() {
                 { label: '📅 วันที่วิ่งงาน', value: form.reserve_date },
                 { label: '⏰ กะ', value: form.shift === 'DAY' ? '☀️ กลางวัน' : form.shift === 'NIGHT' ? '🌙 กลางคืน' : '↔️ ทั้งสองกะ' },
                 { label: '🏢 ลูกค้า', value: form.customer, badge: isBpa ? 'BPA' : isHazmat ? 'Hazmat' : undefined },
-                { label: '📍 จุดรับ → จุดส่ง', value: `${form.loading_place} → ${form.delivery_place}` },
+                { label: '📍 เส้นทาง', value: form.is_round_trip
+                    ? `${form.loading_place} → ${form.delivery_place} → ${form.loading_place}`
+                    : `${form.loading_place} → ${form.delivery_place}` },
+                { label: '🔄 ประเภทเที่ยว', value: form.is_round_trip ? '🔄 ไปกลับ' : '➡️ เที่ยวเดียว' },
                 { label: '🚛 ประเภทรถ', value: form.truck_type || '—' },
                 { label: '🔢 จำนวนเที่ยวรวม', value: `${totalTrips} เที่ยว`, highlight: true },
                 ...(form.order_remark ? [{ label: '📝 หมายเหตุ', value: form.order_remark }] : []),
