@@ -1,4 +1,4 @@
-'use client';
+
 
 import { Bell, CheckCheck } from 'lucide-react';
 import { Badge } from '@/components/ui/Badge';

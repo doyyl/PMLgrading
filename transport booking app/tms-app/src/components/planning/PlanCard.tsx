@@ -1,4 +1,4 @@
-'use client';
+
 
 import { Truck, User, Battery, Package, AlertTriangle, Zap, MapPin, ArrowRight } from 'lucide-react';
 import { Badge } from '@/components/ui/Badge';

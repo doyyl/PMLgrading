@@ -1,4 +1,4 @@
-'use client';
+
 
 import { useState } from 'react';
 import { Truck, CheckCircle2, ChevronRight, Activity } from 'lucide-react';

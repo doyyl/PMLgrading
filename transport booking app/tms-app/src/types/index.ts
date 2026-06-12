@@ -107,6 +107,14 @@ export interface Booking {
   route_category?: RouteCategory;
   origin_site_id?: string;
   dest_site_id?: string;
+  customer?: string;
+  loading_place?: string;
+  delivery_place?: string;
+  trip_count?: number;
+  shift?: 'DAY' | 'NIGHT' | 'BOTH';
+  csr_contact?: string;
+  is_round_trip?: boolean;
+  activity?: string;
   created_at: string;
   updated_at: string;
   // joined
@@ -315,6 +323,14 @@ export interface CreateBookingForm {
   route_category?: RouteCategory;
   origin_site_id?: string;
   dest_site_id?: string;
+  customer?: string;
+  loading_place?: string;
+  delivery_place?: string;
+  trip_count?: number;
+  shift?: 'DAY' | 'NIGHT' | 'BOTH';
+  csr_contact?: string;
+  is_round_trip?: boolean;
+  activity?: string;
 }
 
 export interface AssignPlanForm {

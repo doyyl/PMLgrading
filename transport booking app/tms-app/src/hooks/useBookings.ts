@@ -1,4 +1,4 @@
-'use client';
+
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { createClient } from '@/lib/supabase/client';
@@ -45,6 +45,39 @@ export function useCreateBooking() {
     onError: (err: Error) => {
       toast.error(err.message);
     },
+  });
+}
+
+export function useCancelBooking() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id }: { id: string }) => {
+      const supabase = createClient();
+      // Cancel every trip that hasn't been delivered yet, then the booking itself
+      const { error: tripError } = await supabase
+        .from('trips')
+        .update({ status: 'cancelled' })
+        .eq('booking_id', id)
+        .not('status', 'in', '("completed","cancelled")');
+      if (tripError) throw new Error(tripError.message);
+
+      const { error } = await supabase
+        .from('bookings')
+        .update({ status: 'Cancelled' })
+        .eq('id', id);
+      if (error) throw new Error(error.message);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['bookings'] });
+      qc.invalidateQueries({ queryKey: ['admin-booking-history'] });
+      qc.invalidateQueries({ queryKey: ['admin-stats'] });
+      qc.invalidateQueries({ queryKey: ['all-trips'] });
+      qc.invalidateQueries({ queryKey: ['unassigned-trips'] });
+      qc.invalidateQueries({ queryKey: ['driver-trips'] });
+      qc.invalidateQueries({ queryKey: ['planning-stats'] });
+      toast.success('ยกเลิกการจองและเที่ยวที่เกี่ยวข้องแล้ว');
+    },
+    onError: (err: Error) => toast.error(err.message),
   });
 }
 

@@ -1,6 +1,13 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
+import { createContext, useContext, useState, type ReactNode } from 'react';
 
 export type AppRole = 'admin' | 'driver' | 'manager';
+
+// Default landing page per role — used by login redirect and route guards
+export const ROLE_HOME: Record<AppRole, string> = {
+  admin:   '/dashboard',
+  driver:  '/driver',
+  manager: '/manager',
+};
 
 export interface AppUser {
   id: string;
@@ -33,21 +40,12 @@ const KEYS = {
 } as const;
 
 export function RoleProvider({ children }: { children: ReactNode }) {
-  const [role, setRoleState] = useState<AppRole | null>(null);
-  const [userId, setUserId] = useState<string | null>(null);
-  const [displayName, setDisplayNameState] = useState<string | null>(null);
-  const [driverId, setDriverIdState] = useState<string | null>(null);
-
-  useEffect(() => {
-    const r = localStorage.getItem(KEYS.role) as AppRole | null;
-    const u = localStorage.getItem(KEYS.userId);
-    const n = localStorage.getItem(KEYS.displayName);
-    const d = localStorage.getItem(KEYS.driverId);
-    if (r) setRoleState(r);
-    if (u) setUserId(u);
-    if (n) setDisplayNameState(n);
-    if (d) setDriverIdState(d);
-  }, []);
+  // Lazy init from localStorage so guards see the session on first render
+  // (an effect-based load caused a redirect-to-login flash on hard refresh)
+  const [role, setRoleState] = useState<AppRole | null>(() => localStorage.getItem(KEYS.role) as AppRole | null);
+  const [userId, setUserId] = useState<string | null>(() => localStorage.getItem(KEYS.userId));
+  const [displayName, setDisplayNameState] = useState<string | null>(() => localStorage.getItem(KEYS.displayName));
+  const [driverId, setDriverIdState] = useState<string | null>(() => localStorage.getItem(KEYS.driverId));
 
   const login = (user: AppUser) => {
     setRoleState(user.role);

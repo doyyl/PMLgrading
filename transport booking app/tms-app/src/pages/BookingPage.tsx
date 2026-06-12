@@ -2,10 +2,11 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { createClient } from '@/lib/supabase/client';
 import { BookingWizard } from '@/components/booking/BookingWizard';
+import { useCancelBooking } from '@/hooks/useBookings';
 import { useRole } from '@/context/role';
 import type { Booking } from '@/types';
 import { cn } from '@/lib/utils';
-import { CalendarPlus, LayoutDashboard, History, Truck, CheckCircle2, Clock, AlertTriangle } from 'lucide-react';
+import { CalendarPlus, LayoutDashboard, History, Truck, CheckCircle2, Clock, AlertTriangle, Trash2 } from 'lucide-react';
 
 // ── Admin dashboard stats ─────────────────────────────────────
 
@@ -49,7 +50,7 @@ function useBookingHistory() {
         .order('created_at', { ascending: false })
         .limit(100);
       if (error) throw new Error(error.message);
-      return data as (Booking & { site: { site_name: string } | null })[];
+      return (data ?? []) as unknown as (Booking & { site: { site_name: string } | null })[];
     },
   });
 }
@@ -129,8 +130,19 @@ function DashboardTab() {
 
 function HistoryTab() {
   const { data: bookings = [], isLoading } = useBookingHistory();
+  const cancelBooking = useCancelBooking();
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [confirmCancelId, setConfirmCancelId] = useState<string | null>(null);
+
+  function handleCancel(id: string) {
+    if (confirmCancelId !== id) {
+      setConfirmCancelId(id);
+      return;
+    }
+    setConfirmCancelId(null);
+    cancelBooking.mutate({ id });
+  }
 
   const filtered = bookings.filter(b => {
     if (statusFilter !== 'all' && b.status !== statusFilter) return false;
@@ -180,6 +192,7 @@ function HistoryTab() {
                 <th className="px-3 py-2 text-left text-xs font-bold text-gray-500 uppercase">รถ</th>
                 <th className="px-3 py-2 text-left text-xs font-bold text-gray-500 uppercase">สินค้า</th>
                 <th className="px-3 py-2 text-left text-xs font-bold text-gray-500 uppercase">สถานะ</th>
+                <th className="px-3 py-2" />
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
@@ -200,10 +213,28 @@ function HistoryTab() {
                       {b.status}
                     </span>
                   </td>
+                  <td className="px-3 py-3 text-right">
+                    {b.status !== 'Cancelled' && (
+                      <button
+                        onClick={() => handleCancel(b.id)}
+                        disabled={cancelBooking.isPending}
+                        title="ยกเลิกการจอง"
+                        className={cn(
+                          'rounded-lg px-2 py-1 text-[10px] font-semibold transition-colors disabled:opacity-40',
+                          confirmCancelId === b.id
+                            ? 'bg-red-600 text-white hover:bg-red-700'
+                            : 'text-red-400 hover:bg-red-50 hover:text-red-600'
+                        )}>
+                        {confirmCancelId === b.id
+                          ? 'ยืนยันยกเลิก?'
+                          : <Trash2 className="h-3.5 w-3.5" />}
+                      </button>
+                    )}
+                  </td>
                 </tr>
               ))}
               {filtered.length === 0 && (
-                <tr><td colSpan={6} className="px-3 py-8 text-center text-sm text-gray-400">ไม่พบข้อมูล</td></tr>
+                <tr><td colSpan={7} className="px-3 py-8 text-center text-sm text-gray-400">ไม่พบข้อมูล</td></tr>
               )}
             </tbody>
           </table>

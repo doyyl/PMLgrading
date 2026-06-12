@@ -1,5 +1,7 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
+import toast from 'react-hot-toast';
 import {
   CalendarDays, ArrowRight, ArrowLeft, CheckCircle2,
   Sun, Moon, AlertTriangle, Lightbulb, ChevronRight, Truck,
@@ -98,6 +100,7 @@ export function BookingWizard() {
   const [form, setForm] = useState<WizardState>(INIT);
   const [done, setDone] = useState(false);
   const createBooking = useCreateBooking();
+  const navigate = useNavigate();
 
   const { data: sitesDb = [] } = useQuery({
     queryKey: ['sites'],
@@ -122,7 +125,6 @@ export function BookingWizard() {
   async function submit() {
     const originSite = sitesDb.find(s => s.site_name === form.loading_place);
     const destSite   = sitesDb.find(s => s.site_name === form.delivery_place);
-    // site_id = destination first, then origin, then first available
     const siteRow = destSite ?? originSite ?? sitesDb[0];
 
     const notesParts = [
@@ -130,8 +132,8 @@ export function BookingWizard() {
       form.order_remark || '',
     ].filter(Boolean);
 
-    await createBooking.mutateAsync({
-      requested_date: form.reserve_date,   // ← fixed: was form.requested_date
+    const booking = await createBooking.mutateAsync({
+      requested_date: form.reserve_date,
       site_id: siteRow?.id ?? '',
       vehicle_type: TRUCK_TYPES.find(t => t.value === form.truck_type)?.category ?? 'Shuttle',
       cargo_type: isBpa ? 'BPA' : isHazmat ? 'Chemical' : 'General',
@@ -142,7 +144,49 @@ export function BookingWizard() {
       route_category: routeCategoryFromTruckType(form.truck_type) as RouteCategory,
       origin_site_id: originSite?.id,
       dest_site_id:   destSite?.id,
+      customer:       form.customer || undefined,
+      loading_place:  form.loading_place || undefined,
+      delivery_place: form.delivery_place || undefined,
+      trip_count:     totalTrips || undefined,
+      shift:          form.shift,
+      csr_contact:    form.csr_contact || undefined,
+      is_round_trip:  form.is_round_trip,
+      activity:       form.activity || undefined,
     });
+
+    // Auto-create individual trip records, split by shift
+    if (totalTrips > 0 && booking?.id) {
+      const supabase = createClient();
+      const dayCount   = parseInt(form.day_trips   || '0') || 0;
+      const nightCount = parseInt(form.night_trips || '0') || 0;
+      const base = {
+        booking_id:     booking.id,
+        scheduled_date: form.reserve_date,
+        customer:       form.customer || null,
+        loading_place:  form.loading_place || null,
+        destination:    form.delivery_place || null,
+        status:         'unassigned',
+      };
+      const trips = [
+        ...Array.from({ length: dayCount }, (_, i) => ({
+          ...base, trip_number: i + 1,
+          cargo_notes: `☀️ กะกลางวัน ${form.day_time_from}–${form.day_time_to}`,
+        })),
+        ...Array.from({ length: nightCount }, (_, i) => ({
+          ...base, trip_number: dayCount + i + 1,
+          cargo_notes: `🌙 กะกลางคืน ${form.night_time_from}–${form.night_time_to}`,
+        })),
+      ];
+      const { error: tripError } = await supabase.from('trips').insert(trips);
+      if (tripError) {
+        toast.error(`บันทึกการจองแล้ว แต่สร้างเที่ยวไม่สำเร็จ: ${tripError.message}`);
+        setDone(true);
+        return;
+      }
+      // Trips created → booking is confirmed and visible on the planning board
+      await supabase.from('bookings').update({ status: 'Confirmed' }).eq('id', booking.id);
+    }
+
     setDone(true);
   }
 
@@ -164,7 +208,7 @@ export function BookingWizard() {
           <Button variant="outline" onClick={() => { setForm(INIT); setDone(false); setStep(0); }}>
             จองรถใหม่
           </Button>
-          <Button onClick={() => { window.location.href = '/planning'; }}>
+          <Button onClick={() => navigate('/planning')}>
             ดูแผนงาน →
           </Button>
         </div>

@@ -1,7 +1,8 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { createClient } from '@/lib/supabase/client';
-import { useAllPlansWithTrips, useDriverWorkload } from '@/hooks/useTrips';
+import { useAllTrips, useDriverWorkload, type Trip } from '@/hooks/useTrips';
 import type { Booking, Driver, Vehicle } from '@/types';
 import { cn } from '@/lib/utils';
 import {
@@ -18,24 +19,23 @@ function useManagerStats() {
     queryFn: async () => {
       const supabase = createClient();
       const today = new Date().toISOString().split('T')[0];
-      const [bookings, plans, drivers, vehicles, alerts] = await Promise.all([
+      const [bookings, trips, drivers, vehicles] = await Promise.all([
         supabase.from('bookings').select('id, status'),
-        supabase.from('daily_plans').select('id, status').eq('plan_date', today),
+        supabase.from('trips').select('id, status, scheduled_date').neq('status', 'cancelled'),
         supabase.from('drivers').select('id', { count: 'exact', head: true }).eq('active', true),
         supabase.from('vehicles').select('id', { count: 'exact', head: true }).eq('active', true),
-        supabase.from('trip_events').select('id', { count: 'exact', head: true }).eq('acknowledged', false),
       ]);
-      const planData = plans.data ?? [];
+      const tripData = trips.data ?? [];
+      const todayTrips = tripData.filter(t => t.scheduled_date === today);
       const bookingData = bookings.data ?? [];
       return {
         totalBookings:   bookingData.length,
         pendingBookings: bookingData.filter(b => b.status === 'Pending').length,
-        todayDispatched: planData.filter(p => p.status === 'Dispatched' || p.status === 'Assigned').length,
-        todayCompleted:  planData.filter(p => p.status === 'Completed').length,
-        todayPending:    planData.filter(p => p.status === 'Draft').length,
+        todayDispatched: todayTrips.filter(t => t.status === 'in_progress' || t.status === 'assigned').length,
+        todayCompleted:  todayTrips.filter(t => t.status === 'completed').length,
+        todayPending:    tripData.filter(t => t.status === 'unassigned').length,
         activeDrivers:   drivers.count ?? 0,
         activeVehicles:  vehicles.count ?? 0,
-        unackedAlerts:   alerts.count ?? 0,
       };
     },
   });
@@ -129,39 +129,44 @@ function SortableHeader({ label, field, sort, onSort }: {
 
 type Tab = 'jobs' | 'bookings' | 'drivers' | 'vehicles' | 'workload';
 
+const TRIP_STATUS_LABEL: Record<Trip['status'], string> = {
+  unassigned:  'รอมอบหมาย',
+  assigned:    'มอบหมายแล้ว',
+  in_progress: 'กำลังวิ่ง',
+  completed:   'เสร็จแล้ว',
+  cancelled:   'ยกเลิก',
+};
+const TRIP_STATUS_COLOR: Record<Trip['status'], string> = {
+  unassigned:  'bg-gray-100 text-gray-600',
+  assigned:    'bg-blue-100 text-blue-700',
+  in_progress: 'bg-amber-100 text-amber-700',
+  completed:   'bg-green-100 text-green-700',
+  cancelled:   'bg-red-100 text-red-600',
+};
+
 // ── Jobs Tab ─────────────────────────────────────────────────
 
 function JobsTab({ search }: { search: string }) {
-  const { data: plans = [], isLoading } = useAllPlansWithTrips();
+  const { data: trips = [], isLoading } = useAllTrips();
   const q = search.toLowerCase();
 
-  const filtered = plans.filter(p => {
+  const filtered = trips.filter(t => {
     if (!q) return true;
-    const bk = p.booking as any;
-    const dr = p.driver as any;
     return (
-      bk?.booking_ref?.toLowerCase().includes(q) ||
-      bk?.customer?.toLowerCase().includes(q) ||
-      dr?.name?.toLowerCase().includes(q) ||
-      p.status?.toLowerCase().includes(q)
+      (t.customer ?? '').toLowerCase().includes(q) ||
+      (t.destination ?? '').toLowerCase().includes(q) ||
+      (t.loading_place ?? '').toLowerCase().includes(q) ||
+      (t.driver?.name ?? '').toLowerCase().includes(q) ||
+      (t.booking?.booking_ref ?? '').toLowerCase().includes(q)
     );
   });
 
-  const groups = {
-    'Dispatched / In Progress': filtered.filter(p => p.status === 'Dispatched'),
-    'Assigned': filtered.filter(p => p.status === 'Assigned'),
-    'Completed': filtered.filter(p => p.status === 'Completed'),
-    'Draft / รอมอบหมาย': filtered.filter(p => p.status === 'Draft'),
-    'Cancelled': filtered.filter(p => p.status === 'Cancelled'),
-  };
-
-  const groupIcons: Record<string, React.ReactNode> = {
-    'Dispatched / In Progress': <Truck className="h-4 w-4 text-blue-500" />,
-    'Assigned': <Clock className="h-4 w-4 text-amber-500" />,
-    'Completed': <CheckCircle2 className="h-4 w-4 text-emerald-500" />,
-    'Draft / รอมอบหมาย': <AlertTriangle className="h-4 w-4 text-gray-400" />,
-    'Cancelled': <Activity className="h-4 w-4 text-red-400" />,
-  };
+  const groups: { label: string; status: Trip['status']; icon: React.ReactNode }[] = [
+    { label: 'กำลังวิ่ง', status: 'in_progress', icon: <Truck className="h-4 w-4 text-amber-500" /> },
+    { label: 'มอบหมายแล้ว', status: 'assigned', icon: <Clock className="h-4 w-4 text-blue-500" /> },
+    { label: 'รอมอบหมาย', status: 'unassigned', icon: <AlertTriangle className="h-4 w-4 text-gray-400" /> },
+    { label: 'เสร็จแล้ว', status: 'completed', icon: <CheckCircle2 className="h-4 w-4 text-emerald-500" /> },
+  ];
 
   if (isLoading) return (
     <div className="space-y-3 p-4">
@@ -171,59 +176,49 @@ function JobsTab({ search }: { search: string }) {
 
   return (
     <div className="p-4 space-y-6">
-      {Object.entries(groups).map(([group, items]) => {
+      {groups.map(({ label, status, icon }) => {
+        const items = filtered.filter(t => t.status === status);
         if (items.length === 0) return null;
         return (
-          <div key={group}>
+          <div key={status}>
             <div className="flex items-center gap-2 mb-2">
-              {groupIcons[group]}
-              <p className="text-sm font-bold text-gray-700">{group}</p>
-              <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-bold text-gray-500">
-                {items.length}
-              </span>
+              {icon}
+              <p className="text-sm font-bold text-gray-700">{label}</p>
+              <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-bold text-gray-500">{items.length}</span>
             </div>
             <div className="rounded-2xl border border-gray-100 overflow-hidden">
               <table className="w-full text-sm">
                 <thead className="bg-gray-50 border-b border-gray-100">
                   <tr>
                     <th className="px-3 py-2 text-left text-xs font-bold text-gray-500 uppercase">วันที่</th>
-                    <th className="px-3 py-2 text-left text-xs font-bold text-gray-500 uppercase">Booking</th>
-                    <th className="px-3 py-2 text-left text-xs font-bold text-gray-500 uppercase">ลูกค้า</th>
-                    <th className="px-3 py-2 text-left text-xs font-bold text-gray-500 uppercase">พนักงาน</th>
                     <th className="px-3 py-2 text-left text-xs font-bold text-gray-500 uppercase">เที่ยว</th>
+                    <th className="px-3 py-2 text-left text-xs font-bold text-gray-500 uppercase">ลูกค้า</th>
+                    <th className="px-3 py-2 text-left text-xs font-bold text-gray-500 uppercase">เส้นทาง</th>
+                    <th className="px-3 py-2 text-left text-xs font-bold text-gray-500 uppercase">พขร.</th>
                     <th className="px-3 py-2 text-left text-xs font-bold text-gray-500 uppercase">สถานะ</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
-                  {items.map((p: any) => {
-                    const trips = (p.trips ?? []) as Array<{ id: string; status: string }>;
-                    const done = trips.filter(t => t.status === 'completed').length;
-                    return (
-                      <tr key={p.id} className="hover:bg-gray-50 transition-colors">
-                        <td className="px-3 py-2.5 text-gray-600 whitespace-nowrap text-xs">
-                          {new Date(p.plan_date).toLocaleDateString('th-TH', { day: 'numeric', month: 'short' })}
-                        </td>
-                        <td className="px-3 py-2.5 font-mono text-xs font-semibold text-gray-700">
-                          {p.booking?.booking_ref ?? '–'}
-                        </td>
-                        <td className="px-3 py-2.5 text-gray-700 max-w-[120px] truncate text-xs">
-                          {p.booking?.customer ?? '–'}
-                        </td>
-                        <td className="px-3 py-2.5 text-gray-800 text-xs">
-                          {p.driver?.name ?? <span className="text-gray-400 italic">ยังไม่มอบหมาย</span>}
-                        </td>
-                        <td className="px-3 py-2.5 text-xs">
-                          {trips.length > 0
-                            ? <span className={cn('font-semibold', done === trips.length ? 'text-emerald-600' : 'text-gray-700')}>
-                                {done}/{trips.length}
-                              </span>
-                            : <span className="text-gray-300">–</span>
-                          }
-                        </td>
-                        <td className="px-3 py-2.5"><Badge status={p.status} /></td>
-                      </tr>
-                    );
-                  })}
+                  {items.map(t => (
+                    <tr key={t.id} className="hover:bg-gray-50 transition-colors">
+                      <td className="px-3 py-2.5 text-gray-600 whitespace-nowrap text-xs">
+                        {t.scheduled_date ? new Date(t.scheduled_date).toLocaleDateString('th-TH', { day: 'numeric', month: 'short' }) : '–'}
+                      </td>
+                      <td className="px-3 py-2.5 text-xs font-bold text-gray-700">#{t.trip_number}</td>
+                      <td className="px-3 py-2.5 text-gray-700 max-w-[100px] truncate text-xs">{t.customer ?? '–'}</td>
+                      <td className="px-3 py-2.5 text-gray-600 text-xs max-w-[140px] truncate">
+                        {t.loading_place ?? '?'} → {t.destination ?? '?'}
+                      </td>
+                      <td className="px-3 py-2.5 text-gray-800 text-xs">
+                        {t.driver?.name ?? <span className="text-gray-400 italic">ยังไม่มอบหมาย</span>}
+                      </td>
+                      <td className="px-3 py-2.5">
+                        <span className={cn('rounded-full px-2 py-0.5 text-xs font-semibold', TRIP_STATUS_COLOR[t.status])}>
+                          {TRIP_STATUS_LABEL[t.status]}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </div>
@@ -259,11 +254,10 @@ function WorkloadTab() {
           <thead className="bg-gray-50 border-b border-gray-100">
             <tr>
               <th className="px-3 py-2.5 text-left text-xs font-bold text-gray-500 uppercase">พนักงานขับรถ</th>
-              <th className="px-3 py-2.5 text-center text-xs font-bold text-gray-500 uppercase">งานทั้งหมด</th>
-              <th className="px-3 py-2.5 text-center text-xs font-bold text-gray-500 uppercase">กำลังทำ</th>
-              <th className="px-3 py-2.5 text-center text-xs font-bold text-gray-500 uppercase">เสร็จแล้ว</th>
-              <th className="px-3 py-2.5 text-center text-xs font-bold text-gray-500 uppercase">เที่ยวทั้งหมด</th>
-              <th className="px-3 py-2.5 text-center text-xs font-bold text-gray-500 uppercase">เที่ยวเสร็จ</th>
+              <th className="px-3 py-2.5 text-center text-xs font-bold text-gray-500 uppercase">รวมเที่ยว</th>
+              <th className="px-3 py-2.5 text-center text-xs font-bold text-amber-600 uppercase">กำลังวิ่ง</th>
+              <th className="px-3 py-2.5 text-center text-xs font-bold text-green-600 uppercase">เสร็จแล้ว</th>
+              <th className="px-3 py-2.5 text-center text-xs font-bold text-blue-600 uppercase">มอบหมาย</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-50">
@@ -273,24 +267,20 @@ function WorkloadTab() {
                 <td className="px-3 py-3 text-center font-bold text-gray-700">{w.total}</td>
                 <td className="px-3 py-3 text-center">
                   <span className={cn('rounded-full px-2 py-0.5 text-xs font-semibold',
-                    w.inProgress > 0 ? 'bg-blue-100 text-blue-700' : 'text-gray-400')}>
+                    w.inProgress > 0 ? 'bg-amber-100 text-amber-700' : 'text-gray-300')}>
                     {w.inProgress}
                   </span>
                 </td>
                 <td className="px-3 py-3 text-center">
                   <span className={cn('rounded-full px-2 py-0.5 text-xs font-semibold',
-                    w.completed > 0 ? 'bg-emerald-100 text-emerald-700' : 'text-gray-400')}>
+                    w.completed > 0 ? 'bg-emerald-100 text-emerald-700' : 'text-gray-300')}>
                     {w.completed}
                   </span>
                 </td>
-                <td className="px-3 py-3 text-center text-gray-700">{w.totalTrips}</td>
                 <td className="px-3 py-3 text-center">
-                  <span className={cn('font-semibold text-sm',
-                    w.completedTrips === w.totalTrips && w.totalTrips > 0
-                      ? 'text-emerald-600'
-                      : 'text-gray-700')}>
-                    {w.completedTrips}
-                    {w.totalTrips > 0 && <span className="text-gray-400 font-normal text-xs">/{w.totalTrips}</span>}
+                  <span className={cn('rounded-full px-2 py-0.5 text-xs font-semibold',
+                    w.assigned > 0 ? 'bg-blue-100 text-blue-700' : 'text-gray-300')}>
+                    {w.assigned}
                   </span>
                 </td>
               </tr>
@@ -345,12 +335,18 @@ export default function ManagerPage() {
           <h1 className="text-2xl font-bold text-gray-900">ภาพรวมระบบ</h1>
           <p className="text-sm text-gray-500">ข้อมูลแบบ real-time</p>
         </div>
-        <button
-          onClick={() => refetchStats()}
-          className="flex items-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-600 hover:bg-gray-50 shadow-sm"
-        >
-          <RefreshCw className="h-4 w-4" /> รีเฟรช
-        </button>
+        <div className="flex gap-2">
+          <Link to="/dashboard"
+            className="flex items-center gap-1.5 rounded-xl bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700 shadow-sm">
+            <BarChart3 className="h-4 w-4" /> ดูสถิติ
+          </Link>
+          <button
+            onClick={() => refetchStats()}
+            className="flex items-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-600 hover:bg-gray-50 shadow-sm"
+          >
+            <RefreshCw className="h-4 w-4" /> รีเฟรช
+          </button>
+        </div>
       </div>
 
       {/* Stats */}

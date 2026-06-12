@@ -8,22 +8,25 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useRole, type AppRole } from '@/context/role';
+import { signOutEverywhere } from '@/hooks/useAuth';
 
 type NavItem = { href: string; icon: React.ElementType; th: string; en: string };
 
 const NAV_BY_ROLE: Record<AppRole, NavItem[]> = {
   admin: [
-    { href: '/',        icon: LayoutDashboard, th: 'หน้าหลัก',   en: 'Dashboard' },
-    { href: '/booking', icon: CalendarPlus,    th: 'จองรถ',       en: 'Booking' },
-    { href: '/planning',icon: MapPin,           th: 'วางแผนงาน',  en: 'Planning' },
+    { href: '/dashboard', icon: LayoutDashboard, th: 'สถิติ',       en: 'Statistics' },
+    { href: '/booking',   icon: CalendarPlus,    th: 'จองรถ',       en: 'Booking' },
+    { href: '/planning',  icon: MapPin,           th: 'วางแผนงาน',  en: 'Planning' },
+    { href: '/tracking',  icon: Activity,         th: 'ติดตามรถ',   en: 'Tracking' },
   ],
   driver: [
-    { href: '/driver',  icon: Truck,           th: 'ตารางงานฉัน', en: 'My Shifts' },
+    { href: '/driver',    icon: Truck,           th: 'ตารางงานฉัน', en: 'My Shifts' },
   ],
   manager: [
-    { href: '/manager', icon: BarChart3,       th: 'ภาพรวมระบบ',  en: 'Overview' },
-    { href: '/planning',icon: MapPin,           th: 'วางแผนงาน',  en: 'Planning' },
-    { href: '/tracking',icon: Activity,         th: 'ติดตามรถ',   en: 'Tracking' },
+    { href: '/manager',   icon: BarChart3,       th: 'ภาพรวมระบบ',  en: 'Overview' },
+    { href: '/dashboard', icon: LayoutDashboard, th: 'สถิติ',       en: 'Statistics' },
+    { href: '/planning',  icon: MapPin,           th: 'วางแผนงาน',  en: 'Planning' },
+    { href: '/tracking',  icon: Activity,         th: 'ติดตามรถ',   en: 'Tracking' },
     { href: '/tracking/sustainability', icon: Leaf, th: 'CO₂ / EV', en: 'Sustainability' },
   ],
 };
@@ -36,12 +39,18 @@ const ROLE_LABEL: Record<AppRole, { label: string; color: string }> = {
 
 export function Sidebar() {
   const [collapsed, setCollapsed] = useState(false);
-  const { role, driverName } = useRole();
+  const { role, driverName, clearRole } = useRole();
   const navigate = useNavigate();
   const { pathname } = useLocation();
 
   const nav = role ? NAV_BY_ROLE[role] : NAV_BY_ROLE.admin;
   const roleInfo = role ? ROLE_LABEL[role] : null;
+
+  function handleLogout() {
+    void signOutEverywhere(); // end the Supabase Auth session too
+    clearRole();
+    navigate('/', { replace: true });
+  }
 
   return (
     <>
@@ -50,8 +59,8 @@ export function Sidebar() {
         <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600 text-white font-bold text-xs">TMS</div>
         <p className="font-bold text-gray-900 text-sm">KNS Transport</p>
         <div className="ml-auto flex gap-1 items-center">
-          {nav.map(({ href, icon: Icon, th }) => {
-            const active = pathname === href || (href !== '/' && pathname.startsWith(href));
+          {nav.map(({ href, icon: Icon }) => {
+            const active = pathname === href;
             return (
               <Link key={href} to={href}
                 className={cn('flex flex-col items-center rounded-lg p-1.5 text-[10px] font-medium transition-colors',
@@ -60,7 +69,7 @@ export function Sidebar() {
               </Link>
             );
           })}
-          <button onClick={() => navigate('/')} className="ml-1 rounded-lg p-1.5 text-gray-400 hover:bg-gray-50">
+          <button onClick={handleLogout} className="ml-1 rounded-lg p-1.5 text-gray-400 hover:bg-gray-50">
             <LogOut className="h-4 w-4" />
           </button>
         </div>
@@ -98,7 +107,7 @@ export function Sidebar() {
         {/* Nav */}
         <nav className="flex-1 overflow-y-auto px-2 py-3 space-y-1">
           {nav.map(({ href, icon: Icon, th, en }) => {
-            const active = pathname === href || (href !== '/' && pathname.startsWith(href));
+            const active = pathname === href;
             return (
               <Link key={href} to={href}
                 title={collapsed ? `${th} (${en})` : undefined}
@@ -119,15 +128,15 @@ export function Sidebar() {
           })}
         </nav>
 
-        {/* Switch role */}
+        {/* Logout */}
         <button
-          onClick={() => navigate('/')}
+          onClick={handleLogout}
           className={cn(
             'flex items-center gap-2 border-t border-gray-100 px-4 py-3 text-xs text-gray-400 hover:bg-gray-50 hover:text-red-500 transition-colors',
             collapsed && 'justify-center'
           )}>
           <LogOut className="h-4 w-4 shrink-0" />
-          {!collapsed && <span>เปลี่ยนบทบาท</span>}
+          {!collapsed && <span>ออกจากระบบ</span>}
         </button>
 
         {/* Collapse toggle */}

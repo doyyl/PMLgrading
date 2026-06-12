@@ -1,4 +1,4 @@
-'use client';
+
 
 import { MapPin, Package, Clock, RefreshCw } from 'lucide-react';
 import { Badge } from '@/components/ui/Badge';

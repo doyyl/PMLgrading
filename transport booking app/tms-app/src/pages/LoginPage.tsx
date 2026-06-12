@@ -1,29 +1,26 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Navigate, useNavigate } from 'react-router-dom';
 import { useLoginMutation } from '@/hooks/useAuth';
-import { useRole } from '@/context/role';
+import { useRole, ROLE_HOME } from '@/context/role';
 import { Eye, EyeOff, LogIn, AlertCircle } from 'lucide-react';
-
-const REDIRECT: Record<string, string> = {
-  admin:   '/booking',
-  driver:  '/driver',
-  manager: '/manager',
-};
 
 export default function LoginPage() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPw, setShowPw] = useState(false);
   const navigate = useNavigate();
-  const { login } = useRole();
+  const { role, login } = useRole();
   const { mutate, isPending, error } = useLoginMutation();
+
+  // Already logged in — go straight to the role's home page
+  if (role) return <Navigate to={ROLE_HOME[role]} replace />;
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     mutate({ username, password }, {
       onSuccess: (user) => {
         login(user);
-        navigate(REDIRECT[user.role] ?? '/');
+        navigate(ROLE_HOME[user.role] ?? '/');
       },
     });
   }
