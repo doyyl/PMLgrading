@@ -1,12 +1,52 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { createClient } from '@/lib/supabase/client';
-import { BookingWizard } from '@/components/booking/BookingWizard';
+import { BookingWizard, type WizardState } from '@/components/booking/BookingWizard';
 import { useCancelBooking } from '@/hooks/useBookings';
 import { useRole } from '@/context/role';
-import type { Booking } from '@/types';
+import { TRUCK_TYPES } from '@/lib/reference-data';
 import { cn } from '@/lib/utils';
-import { CalendarPlus, LayoutDashboard, History, Truck, CheckCircle2, Clock, AlertTriangle, Trash2 } from 'lucide-react';
+import { CalendarPlus, LayoutDashboard, History, Truck, CheckCircle2, Clock, AlertTriangle, Trash2, Copy } from 'lucide-react';
+
+// Booking row with the extra columns needed to re-create the wizard form
+type HistoryRow = {
+  id: string;
+  booking_ref: string;
+  requested_date: string;
+  customer: string | null;
+  vehicle_type: string;
+  cargo_type: string;
+  is_bpa_cargo: boolean;
+  status: string;
+  trip_count: number | null;
+  loading_place: string | null;
+  delivery_place: string | null;
+  shift: string | null;
+  csr_contact: string | null;
+  is_round_trip: boolean | null;
+  activity: string | null;
+  site: { site_name: string } | null;
+};
+
+// Map a saved booking back into wizard form state (date intentionally left
+// at today, so a frequent order is simply re-booked for a new day)
+function bookingToWizardInit(b: HistoryRow): Partial<WizardState> {
+  const truck = TRUCK_TYPES.find(t => t.category === b.vehicle_type)?.value ?? '';
+  const shift = (b.shift as WizardState['shift']) ?? 'DAY';
+  const n = b.trip_count ?? 0;
+  return {
+    shift,
+    csr_contact: b.csr_contact ?? '',
+    customer: b.customer ?? '',
+    loading_place: b.loading_place ?? '',
+    delivery_place: b.delivery_place ?? '',
+    is_round_trip: !!b.is_round_trip,
+    activity: b.activity ?? 'Transfer',
+    truck_type: truck,
+    day_trips:   shift === 'NIGHT' ? '' : (n ? String(n) : ''),
+    night_trips: shift === 'NIGHT' ? (n ? String(n) : '') : '',
+  };
+}
 
 // ── Admin dashboard stats ─────────────────────────────────────
 
@@ -45,12 +85,13 @@ function useBookingHistory() {
         .select(`
           id, booking_ref, requested_date, customer, vehicle_type,
           cargo_type, is_bpa_cargo, status, trip_count,
+          loading_place, delivery_place, shift, csr_contact, is_round_trip, activity,
           site:sites!bookings_site_id_fkey(site_name)
         `)
         .order('created_at', { ascending: false })
         .limit(100);
       if (error) throw new Error(error.message);
-      return (data ?? []) as unknown as (Booking & { site: { site_name: string } | null })[];
+      return (data ?? []) as unknown as HistoryRow[];
     },
   });
 }
@@ -128,7 +169,7 @@ function DashboardTab() {
 
 // ── History Tab ───────────────────────────────────────────────
 
-function HistoryTab() {
+function HistoryTab({ onDuplicate }: { onDuplicate: (b: HistoryRow) => void }) {
   const { data: bookings = [], isLoading } = useBookingHistory();
   const cancelBooking = useCancelBooking();
   const [search, setSearch] = useState('');
@@ -213,14 +254,20 @@ function HistoryTab() {
                       {b.status}
                     </span>
                   </td>
-                  <td className="px-3 py-3 text-right">
+                  <td className="px-3 py-3 text-right whitespace-nowrap">
+                    <button
+                      onClick={() => onDuplicate(b)}
+                      title="ทำซ้ำการจองนี้"
+                      className="rounded-lg px-2 py-1 text-[10px] font-semibold text-blue-400 hover:bg-blue-50 hover:text-blue-600 transition-colors">
+                      <Copy className="h-3.5 w-3.5" />
+                    </button>
                     {b.status !== 'Cancelled' && (
                       <button
                         onClick={() => handleCancel(b.id)}
                         disabled={cancelBooking.isPending}
                         title="ยกเลิกการจอง"
                         className={cn(
-                          'rounded-lg px-2 py-1 text-[10px] font-semibold transition-colors disabled:opacity-40',
+                          'ml-1 rounded-lg px-2 py-1 text-[10px] font-semibold transition-colors disabled:opacity-40',
                           confirmCancelId === b.id
                             ? 'bg-red-600 text-white hover:bg-red-700'
                             : 'text-red-400 hover:bg-red-50 hover:text-red-600'
@@ -250,6 +297,15 @@ type AdminTab = 'dashboard' | 'booking' | 'history';
 
 export default function BookingPage() {
   const [tab, setTab] = useState<AdminTab>('dashboard');
+  const [dupInit, setDupInit] = useState<Partial<WizardState> | null>(null);
+  const [wizardKey, setWizardKey] = useState(0);
+
+  // Duplicate a past booking → pre-fill a fresh wizard and jump to it
+  const handleDuplicate = (b: HistoryRow) => {
+    setDupInit(bookingToWizardInit(b));
+    setWizardKey(k => k + 1);
+    setTab('booking');
+  };
 
   const TABS: { id: AdminTab; label: string; icon: React.ReactNode }[] = [
     { id: 'dashboard', label: 'สรุปงาน',  icon: <LayoutDashboard className="h-4 w-4" /> },
@@ -263,7 +319,11 @@ export default function BookingPage() {
         {/* Tab selector */}
         <div className="flex gap-2">
           {TABS.map(t => (
-            <button key={t.id} onClick={() => setTab(t.id)}
+            <button key={t.id} onClick={() => {
+                // Clicking "จองรถ" directly starts a fresh form
+                if (t.id === 'booking') { setDupInit(null); setWizardKey(k => k + 1); }
+                setTab(t.id);
+              }}
               className={cn(
                 'flex items-center gap-1.5 rounded-xl px-4 py-2.5 text-sm font-semibold transition-colors',
                 tab === t.id ? 'bg-blue-600 text-white shadow-sm' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'
@@ -282,16 +342,22 @@ export default function BookingPage() {
               <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-600 text-white shadow-lg">
                 <span className="text-2xl">🚛</span>
               </div>
-              <h1 className="text-2xl font-bold text-gray-900">จองรถขนส่ง</h1>
+              <h1 className="text-2xl font-bold text-gray-900">{dupInit ? 'ทำซ้ำการจอง' : 'จองรถขนส่ง'}</h1>
               <p className="mt-1 text-sm text-gray-500">กรอกข้อมูลทีละขั้นตอน ใช้เวลาไม่ถึง 2 นาที</p>
             </div>
+            {dupInit && (
+              <div className="flex items-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700">
+                <Copy className="h-4 w-4 shrink-0" />
+                ทำซ้ำจากการจองเดิม — ตรวจสอบ/แก้ไขข้อมูล (วันที่ตั้งเป็นวันนี้ให้แล้ว) แล้วกดยืนยัน
+              </div>
+            )}
             <div className="rounded-3xl bg-white p-6 shadow-sm border border-gray-100">
-              <BookingWizard />
+              <BookingWizard key={wizardKey} initial={dupInit ?? undefined} />
             </div>
           </>
         )}
 
-        {tab === 'history' && <HistoryTab />}
+        {tab === 'history' && <HistoryTab onDuplicate={handleDuplicate} />}
       </div>
     </div>
   );

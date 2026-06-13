@@ -22,6 +22,37 @@ export interface Trip {
   vehicle?: { id: string; plate_number: string } | null;
 }
 
+// ── Trip issues (driver "report a problem") ──────────────────
+export interface TripIssue {
+  id: string;
+  trip_id: string;
+  driver_id: string | null;
+  issue_type: string;
+  description: string | null;
+  photo_url: string | null;
+  status: 'open' | 'acknowledged' | 'resolved';
+  created_at: string;
+  resolved_at: string | null;
+  trip?: { trip_number: number; customer: string | null; loading_place: string | null; destination: string | null; scheduled_date: string | null } | null;
+  driver?: { id: string; name: string } | null;
+}
+
+export const ISSUE_TYPES = [
+  { value: 'breakdown', label: 'รถเสีย',          icon: '🔧' },
+  { value: 'accident',  label: 'อุบัติเหตุ',       icon: '⚠️' },
+  { value: 'delay',     label: 'ล่าช้า',           icon: '⏰' },
+  { value: 'cargo',     label: 'ปัญหาสินค้า',      icon: '📦' },
+  { value: 'route',     label: 'เส้นทาง / จราจร',  icon: '🛣️' },
+  { value: 'other',     label: 'อื่นๆ',            icon: '❓' },
+] as const;
+
+export function issueTypeLabel(value: string) {
+  return ISSUE_TYPES.find(t => t.value === value)?.label ?? value;
+}
+export function issueTypeIcon(value: string) {
+  return ISSUE_TYPES.find(t => t.value === value)?.icon ?? '❗';
+}
+
 const WEEK_AGO = () => new Date(Date.now() - 7 * 86400000).toISOString().split('T')[0];
 const TODAY    = () => new Date().toISOString().split('T')[0];
 
@@ -40,7 +71,7 @@ export function useAllTrips() {
           vehicle:vehicles(id, plate_number)
         `)
         .gte('scheduled_date', WEEK_AGO())
-        .neq('status', 'cancelled')
+        // cancelled trips are kept so the planning board can show them
         .order('scheduled_date', { ascending: false })
         .order('customer')
         .order('trip_number');
@@ -240,7 +271,56 @@ export function useAssignTrip() {
   });
 }
 
-const TRIP_QUERY_KEYS = ['all-trips', 'driver-trips', 'unassigned-trips', 'tracking-trips', 'planning-stats', 'manager-workload', 'manager-stats', 'day-load'] as const;
+// Assign several trips to one driver (+ optional vehicle) at once
+export function useBulkAssignTrips() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ tripIds, driverId, vehicleId }: { tripIds: string[]; driverId: string; vehicleId?: string | null }) => {
+      if (tripIds.length === 0) return;
+      const supabase = createClient();
+      // BPA guard: if any selected trip is BPA cargo, the driver must be ท.4 + valid ADR
+      const [driverRes, tripRes] = await Promise.all([
+        supabase.from('drivers').select('license_type, adr_certificate_expiry').eq('id', driverId).single(),
+        supabase.from('trips').select('id, booking:bookings!trips_booking_id_fkey(is_bpa_cargo)').in('id', tripIds),
+      ]);
+      const anyBpa = (tripRes.data ?? []).some(t => {
+        const b = t.booking as { is_bpa_cargo: boolean } | { is_bpa_cargo: boolean }[] | null;
+        const booking = Array.isArray(b) ? b[0] : b;
+        return booking?.is_bpa_cargo;
+      });
+      if (anyBpa && driverRes.data && !isDriverBpaQualified(driverRes.data)) {
+        throw new Error('มีงาน BPA ในรายการที่เลือก — พนักงานต้องมีใบ ท.4 และใบ ADR ที่ยังไม่หมดอายุ');
+      }
+      const { error } = await supabase
+        .from('trips')
+        .update({ driver_id: driverId, status: 'assigned', ...(vehicleId !== undefined ? { vehicle_id: vehicleId } : {}) })
+        .in('id', tripIds);
+      if (error) throw new Error(error.message);
+    },
+    onSuccess: () => invalidateTripQueries(qc),
+  });
+}
+
+// Which drivers are on shift for a given date → Map(driver_id → shift_type)
+export function useDriversOnShift(date: string | null) {
+  return useQuery({
+    queryKey: ['drivers-on-shift', date],
+    enabled: !!date,
+    queryFn: async () => {
+      const { data, error } = await createClient()
+        .from('driver_shifts')
+        .select('driver_id, shift_type')
+        .eq('shift_date', date!)
+        .neq('shift_type', 'Off');
+      if (error) throw new Error(error.message);
+      const map = new Map<string, string>();
+      for (const s of data ?? []) map.set(s.driver_id as string, s.shift_type as string);
+      return map;
+    },
+  });
+}
+
+const TRIP_QUERY_KEYS = ['all-trips', 'driver-trips', 'unassigned-trips', 'tracking-trips', 'planning-stats', 'manager-workload', 'manager-stats', 'day-load', 'trip-issues', 'open-issues'] as const;
 
 function invalidateTripQueries(qc: ReturnType<typeof useQueryClient>) {
   for (const key of TRIP_QUERY_KEYS) qc.invalidateQueries({ queryKey: [key] });
@@ -336,9 +416,17 @@ export function useCompleteTrip() {
 }
 
 export async function uploadTripPhoto(tripId: string, file: File): Promise<string> {
+  return uploadToTripPhotos(`trips/${tripId}_${Date.now()}`, file);
+}
+
+export async function uploadIssuePhoto(tripId: string, file: File): Promise<string> {
+  return uploadToTripPhotos(`issues/${tripId}_${Date.now()}`, file);
+}
+
+async function uploadToTripPhotos(pathPrefix: string, file: File): Promise<string> {
   const supabase = createClient();
   const ext = file.name.split('.').pop() ?? 'jpg';
-  const path = `trips/${tripId}_${Date.now()}.${ext}`;
+  const path = `${pathPrefix}.${ext}`;
   const { data, error } = await supabase.storage
     .from('trip-photos').upload(path, file, { contentType: file.type, upsert: true });
   if (error) {
@@ -347,4 +435,79 @@ export async function uploadTripPhoto(tripId: string, file: File): Promise<strin
     throw new Error(`อัพโหลดรูปไม่สำเร็จ: ${error.message}`);
   }
   return supabase.storage.from('trip-photos').getPublicUrl(data.path).data.publicUrl;
+}
+
+// ── Trip issues ───────────────────────────────────────────────
+
+// Open issues per trip — drives the "reported" badge on a trip card
+export function useTripIssues(tripId: string | null) {
+  return useQuery({
+    queryKey: ['trip-issues', tripId],
+    enabled: !!tripId,
+    queryFn: async () => {
+      const { data, error } = await createClient()
+        .from('trip_issues')
+        .select('*')
+        .eq('trip_id', tripId!)
+        .order('created_at', { ascending: false });
+      if (error) throw new Error(error.message);
+      return (data ?? []) as TripIssue[];
+    },
+  });
+}
+
+// All open issues, newest first — manager view
+export function useOpenIssues() {
+  return useQuery({
+    queryKey: ['open-issues'],
+    refetchInterval: 20_000,
+    queryFn: async () => {
+      const { data, error } = await createClient()
+        .from('trip_issues')
+        .select(`
+          *,
+          trip:trips!trip_issues_trip_id_fkey(trip_number, customer, loading_place, destination, scheduled_date),
+          driver:drivers(id, name)
+        `)
+        .neq('status', 'resolved')
+        .order('created_at', { ascending: false });
+      if (error) throw new Error(error.message);
+      return (data ?? []) as TripIssue[];
+    },
+  });
+}
+
+export function useReportIssue() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ tripId, driverId, issueType, description, photoUrl }: {
+      tripId: string; driverId: string | null; issueType: string; description?: string; photoUrl?: string | null;
+    }) => {
+      const { error } = await createClient()
+        .from('trip_issues')
+        .insert({
+          trip_id: tripId,
+          driver_id: driverId,
+          issue_type: issueType,
+          description: description || null,
+          photo_url: photoUrl || null,
+        });
+      if (error) throw new Error(error.message);
+    },
+    onSuccess: () => invalidateTripQueries(qc),
+  });
+}
+
+export function useResolveIssue() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ issueId }: { issueId: string }) => {
+      const { error } = await createClient()
+        .from('trip_issues')
+        .update({ status: 'resolved', resolved_at: new Date().toISOString() })
+        .eq('id', issueId);
+      if (error) throw new Error(error.message);
+    },
+    onSuccess: () => invalidateTripQueries(qc),
+  });
 }

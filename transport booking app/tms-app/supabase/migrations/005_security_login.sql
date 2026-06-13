@@ -1,18 +1,19 @@
 -- ============================================================
 -- Migration 005: Secure login
 --   * Hash existing plaintext passwords with bcrypt (pgcrypto)
---   * Login moves to a SECURITY DEFINER RPC — the anon key can
+--   * Login moves to a SECURITY DEFINER RPC -- the anon key can
 --     no longer read the app_users table at all
 -- Run in Supabase SQL Editor
 -- ============================================================
 
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
+-- pgcrypto lives in the `extensions` schema on Supabase
+CREATE EXTENSION IF NOT EXISTS pgcrypto SCHEMA extensions;
 
 -- 1) Add hash column and migrate existing plaintext passwords
 ALTER TABLE public.app_users ADD COLUMN IF NOT EXISTS password_hash TEXT;
 
 UPDATE public.app_users
-SET password_hash = crypt(password, gen_salt('bf'))
+SET password_hash = extensions.crypt(password, extensions.gen_salt('bf'))
 WHERE password_hash IS NULL AND password IS NOT NULL;
 
 -- 2) Drop the plaintext column
@@ -26,7 +27,7 @@ CREATE OR REPLACE FUNCTION public.app_login(p_username TEXT, p_password TEXT)
 RETURNS TABLE (id UUID, username TEXT, role TEXT, display_name TEXT, driver_id UUID)
 LANGUAGE sql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = public, extensions
 AS $$
   SELECT u.id, u.username, u.role, u.display_name, u.driver_id
   FROM public.app_users u
@@ -42,9 +43,9 @@ GRANT EXECUTE ON FUNCTION public.app_login(TEXT, TEXT) TO anon;
 -- ─── How to manage accounts after this migration ─────────────
 -- Add a user:
 --   INSERT INTO public.app_users (username, password_hash, role, display_name, driver_id)
---   VALUES ('driver02', crypt('pass1234', gen_salt('bf')), 'driver', 'ชื่อ พขร.', '<driver UUID>');
+--   VALUES ('driver02', extensions.crypt('pass1234', extensions.gen_salt('bf')), 'driver', 'ชื่อ พขร.', '<driver UUID>');
 --
 -- Change a password:
 --   UPDATE public.app_users
---   SET password_hash = crypt('รหัสใหม่', gen_salt('bf'))
+--   SET password_hash = extensions.crypt('รหัสใหม่', extensions.gen_salt('bf'))
 --   WHERE username = 'admin';

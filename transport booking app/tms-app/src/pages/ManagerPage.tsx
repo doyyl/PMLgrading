@@ -2,9 +2,14 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { createClient } from '@/lib/supabase/client';
-import { useAllTrips, useDriverWorkload, type Trip } from '@/hooks/useTrips';
+import {
+  useAllTrips, useDriverWorkload,
+  useOpenIssues, useResolveIssue, issueTypeLabel, issueTypeIcon,
+  type Trip,
+} from '@/hooks/useTrips';
 import type { Booking, Driver, Vehicle } from '@/types';
 import { cn } from '@/lib/utils';
+import toast from 'react-hot-toast';
 import {
   Truck, Users, Calendar, Activity, RefreshCw,
   ChevronDown, ChevronUp, BarChart3, CheckCircle2, Clock, AlertTriangle,
@@ -127,7 +132,7 @@ function SortableHeader({ label, field, sort, onSort }: {
   );
 }
 
-type Tab = 'jobs' | 'bookings' | 'drivers' | 'vehicles' | 'workload';
+type Tab = 'jobs' | 'bookings' | 'drivers' | 'vehicles' | 'workload' | 'issues';
 
 const TRIP_STATUS_LABEL: Record<Trip['status'], string> = {
   unassigned:  'รอมอบหมาย',
@@ -292,6 +297,73 @@ function WorkloadTab() {
   );
 }
 
+// ── Issues Tab (driver-reported problems) ────────────────────
+
+function IssuesTab() {
+  const { data: issues = [], isLoading } = useOpenIssues();
+  const resolveIssue = useResolveIssue();
+
+  async function resolve(id: string) {
+    try {
+      await resolveIssue.mutateAsync({ issueId: id });
+      toast.success('ทำเครื่องหมาย "แก้ไขแล้ว"');
+    } catch (e: unknown) {
+      toast.error((e as Error).message);
+    }
+  }
+
+  if (isLoading) return (
+    <div className="space-y-3 p-4">
+      {[1,2,3].map(i => <div key={i} className="h-20 rounded-xl bg-gray-100 animate-pulse" />)}
+    </div>
+  );
+
+  if (issues.length === 0) {
+    return (
+      <div className="flex flex-col items-center gap-3 py-14 text-gray-400">
+        <CheckCircle2 className="h-9 w-9 text-emerald-300" />
+        <p className="text-sm font-medium">ไม่มีปัญหาที่รอแก้ไข</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="divide-y divide-gray-50">
+      {issues.map(iss => (
+        <div key={iss.id} className="flex items-start gap-3 p-4">
+          <div className="text-2xl leading-none mt-0.5 shrink-0">{issueTypeIcon(iss.issue_type)}</div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="font-bold text-gray-800 text-sm">{issueTypeLabel(iss.issue_type)}</span>
+              <span className="rounded-full bg-orange-100 px-2 py-0.5 text-[10px] font-bold text-orange-700">
+                เที่ยว {iss.trip?.trip_number ?? '?'}
+              </span>
+              {iss.trip?.customer && <span className="text-xs font-medium text-gray-600">{iss.trip.customer}</span>}
+            </div>
+            {iss.description && <p className="text-sm text-gray-600 mt-1">{iss.description}</p>}
+            <div className="flex items-center gap-x-3 gap-y-0.5 text-xs text-gray-400 mt-1 flex-wrap">
+              {iss.driver?.name && <span>👤 {iss.driver.name}</span>}
+              {iss.trip && (iss.trip.loading_place || iss.trip.destination) && (
+                <span>{iss.trip.loading_place ?? '?'} → {iss.trip.destination ?? '?'}</span>
+              )}
+              <span>{new Date(iss.created_at).toLocaleString('th-TH', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
+              {iss.photo_url && (
+                <a href={iss.photo_url} target="_blank" rel="noreferrer" className="text-blue-500 underline underline-offset-2">
+                  ดูรูป
+                </a>
+              )}
+            </div>
+          </div>
+          <button onClick={() => resolve(iss.id)} disabled={resolveIssue.isPending}
+            className="shrink-0 rounded-xl bg-emerald-600 px-3 py-2 text-xs font-bold text-white hover:bg-emerald-700 disabled:opacity-50">
+            แก้ไขแล้ว
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ── Main Page ─────────────────────────────────────────────────
 
 export default function ManagerPage() {
@@ -303,6 +375,7 @@ export default function ManagerPage() {
   const { data: bookings } = useAllBookings();
   const { data: drivers } = useAllDrivers();
   const { data: vehicles } = useAllVehicles();
+  const { data: openIssues } = useOpenIssues();
 
   const handleSort = (field: string) =>
     setSort(prev => prev.field === field ? { field, asc: !prev.asc } : { field, asc: true });
@@ -322,6 +395,7 @@ export default function ManagerPage() {
   const TABS: { id: Tab; label: string; count?: number }[] = [
     { id: 'jobs',     label: 'งานทั้งหมด' },
     { id: 'workload', label: 'ภาระงาน' },
+    { id: 'issues',   label: '⚠️ แจ้งปัญหา', count: openIssues?.length },
     { id: 'bookings', label: 'คำจอง',    count: bookings?.length },
     { id: 'drivers',  label: 'พนักงาน',  count: drivers?.length },
     { id: 'vehicles', label: 'รถ',        count: vehicles?.length },
@@ -369,7 +443,7 @@ export default function ManagerPage() {
 
       {/* Search + Tabs */}
       <div className="space-y-3">
-        {tab !== 'jobs' && tab !== 'workload' && (
+        {tab !== 'jobs' && tab !== 'workload' && tab !== 'issues' && (
           <input
             type="text"
             placeholder="ค้นหา..."
@@ -410,6 +484,7 @@ export default function ManagerPage() {
       <div className="rounded-2xl border border-gray-100 bg-white shadow-sm overflow-hidden">
         {tab === 'jobs' && <JobsTab search={search} />}
         {tab === 'workload' && <WorkloadTab />}
+        {tab === 'issues' && <IssuesTab />}
 
         {tab === 'bookings' && (
           <div className="overflow-x-auto">

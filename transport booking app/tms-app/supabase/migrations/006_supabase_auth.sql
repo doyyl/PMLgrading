@@ -101,9 +101,11 @@ CREATE POLICY "read_own_profile" ON public.app_users
 
 -- Reference data: everyone logged-in reads; admin/manager manage
 DO $$
-DECLARE t TEXT;
+DECLARE
+  t TEXT;
+  ref_tables TEXT[] := ARRAY['sites','drivers','vehicles','assets'];
 BEGIN
-  FOREACH t IN ARRAY ARRAY['sites','drivers','vehicles','assets'] LOOP
+  FOREACH t IN ARRAY ref_tables LOOP
     EXECUTE format('DROP POLICY IF EXISTS "auth_read_%s"   ON public.%I', t, t);
     EXECUTE format('DROP POLICY IF EXISTS "staff_manage_%s" ON public.%I', t, t);
     EXECUTE format(
@@ -159,9 +161,11 @@ CREATE POLICY "trips_update" ON public.trips
 -- any logged-in user (drivers push tracking/checklists/epod);
 -- full manage for admin/manager
 DO $$
-DECLARE t TEXT;
+DECLARE
+  t TEXT;
+  op_tables TEXT[] := ARRAY['daily_plans','driver_shifts','tracking','trip_events','job_acceptances','pre_trip_checklists','epod'];
 BEGIN
-  FOREACH t IN ARRAY ARRAY['daily_plans','driver_shifts','tracking','trip_events','job_acceptances','pre_trip_checklists','epod'] LOOP
+  FOREACH t IN ARRAY op_tables LOOP
     IF to_regclass('public.' || t) IS NULL THEN CONTINUE; END IF;
     EXECUTE format('DROP POLICY IF EXISTS "auth_read_%s"   ON public.%I', t, t);
     EXECUTE format('DROP POLICY IF EXISTS "auth_insert_%s" ON public.%I', t, t);

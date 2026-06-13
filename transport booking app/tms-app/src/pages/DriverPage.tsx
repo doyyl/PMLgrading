@@ -3,11 +3,12 @@ import { useRole } from '@/context/role';
 import {
   useDriverTrips, useUnassignedTrips,
   useClaimTrip, useStartTrip, useCompleteTrip, uploadTripPhoto,
+  useReportIssue, useTripIssues, uploadIssuePhoto, ISSUE_TYPES,
   type Trip,
 } from '@/hooks/useTrips';
 import {
   Truck, MapPin, Clock, CheckCircle2, Play, Camera, X,
-  AlertCircle, Image as ImageIcon, Search, PlusCircle,
+  AlertCircle, Image as ImageIcon, Search, PlusCircle, AlertTriangle,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import toast from 'react-hot-toast';
@@ -198,12 +199,132 @@ function CloseTripModal({ trip, onClose }: { trip: Trip; onClose: () => void }) 
   );
 }
 
+// ── Report Issue Modal ────────────────────────────────────────
+
+function ReportIssueModal({ trip, driverId, onClose }: { trip: Trip; driverId: string; onClose: () => void }) {
+  const reportIssue = useReportIssue();
+  const [issueType, setIssueType] = useState<string>('');
+  const [description, setDescription] = useState('');
+  const [photo, setPhoto] = useState<File | null>(null);
+  const [preview, setPreview] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  function handlePhoto(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    setPhoto(f);
+    const reader = new FileReader();
+    reader.onload = ev => setPreview(ev.target?.result as string);
+    reader.readAsDataURL(f);
+  }
+
+  async function submit() {
+    if (!issueType) return;
+    setSubmitting(true);
+    try {
+      const photoUrl = photo ? await uploadIssuePhoto(trip.id, photo) : undefined;
+      await reportIssue.mutateAsync({
+        tripId: trip.id, driverId, issueType,
+        description: description.trim() || undefined, photoUrl,
+      });
+      toast.success('แจ้งปัญหาเรียบร้อย — ทีมงานได้รับแล้ว');
+      onClose();
+    } catch (e: unknown) {
+      toast.error((e as Error).message);
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm p-4">
+      <div className="w-full max-w-sm rounded-3xl bg-white shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto">
+        <div className="bg-red-600 px-5 py-4 text-white flex items-center justify-between sticky top-0">
+          <div>
+            <p className="font-bold">แจ้งปัญหา — เที่ยวที่ {trip.trip_number}</p>
+            <p className="text-xs text-red-200 mt-0.5">{trip.customer ?? 'ไม่ระบุลูกค้า'}</p>
+          </div>
+          <button onClick={onClose} className="rounded-full p-1 hover:bg-red-500">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+        <div className="p-5 space-y-4">
+          {/* Issue type */}
+          <div>
+            <label className="text-xs font-semibold text-gray-500 mb-2 block">ประเภทปัญหา <span className="text-red-500">*</span></label>
+            <div className="grid grid-cols-3 gap-2">
+              {ISSUE_TYPES.map(it => (
+                <button key={it.value} type="button" onClick={() => setIssueType(it.value)}
+                  className={cn(
+                    'flex flex-col items-center gap-1 rounded-xl border-2 py-3 px-1 text-center transition-all',
+                    issueType === it.value
+                      ? 'border-red-500 bg-red-50 text-red-700'
+                      : 'border-gray-200 text-gray-600 hover:border-red-300'
+                  )}>
+                  <span className="text-xl leading-none">{it.icon}</span>
+                  <span className="text-[11px] font-semibold leading-tight">{it.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Description */}
+          <div>
+            <label className="text-xs font-semibold text-gray-500 mb-1 block">รายละเอียด</label>
+            <textarea rows={3} value={description} onChange={e => setDescription(e.target.value)}
+              placeholder="อธิบายปัญหาที่พบ เช่น ยางแตกที่ กม. 45, รอโหลดของนานเกิน 2 ชม."
+              className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-red-500" />
+          </div>
+
+          {/* Optional photo */}
+          <div>
+            <label className="text-xs font-semibold text-gray-500 mb-1 block">รูปภาพ (ไม่บังคับ)</label>
+            {preview ? (
+              <div className="relative">
+                <img src={preview} alt="issue" className="w-full max-h-40 object-cover rounded-xl" />
+                <button onClick={() => { setPhoto(null); setPreview(null); }}
+                  className="absolute top-2 right-2 rounded-full bg-black/60 p-1 text-white hover:bg-black/80">
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            ) : (
+              <button onClick={() => fileRef.current?.click()}
+                className="flex w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-gray-200 bg-gray-50 py-3 text-sm text-gray-500 hover:border-red-300">
+                <Camera className="h-4 w-4" /> เพิ่มรูป
+              </button>
+            )}
+            <input ref={fileRef} type="file" accept="image/*" capture="environment"
+              onChange={handlePhoto} className="hidden" />
+          </div>
+
+          <button onClick={submit} disabled={!issueType || submitting}
+            className="flex w-full items-center justify-center gap-2 rounded-2xl bg-red-600 py-3.5 text-sm font-bold text-white disabled:opacity-50 hover:bg-red-700">
+            {submitting
+              ? <span className="h-4 w-4 rounded-full border-2 border-white/30 border-t-white animate-spin" />
+              : <AlertTriangle className="h-4 w-4" />}
+            ส่งแจ้งปัญหา
+          </button>
+          {!issueType && (
+            <p className="text-center text-xs text-gray-400">เลือกประเภทปัญหาก่อนส่ง</p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Trip Card ─────────────────────────────────────────────────
 
 function TripCard({ trip, driverId, canClaim }: { trip: Trip; driverId: string; canClaim?: boolean }) {
   const [starting, setStarting] = useState(false);
   const [closing,  setClosing]  = useState(false);
+  const [reporting, setReporting] = useState(false);
   const claimTrip = useClaimTrip();
+  // Only the driver's own active trips can report issues / show the badge
+  const isOwnTrip = !canClaim;
+  const { data: issues = [] } = useTripIssues(isOwnTrip ? trip.id : null);
+  const openIssues = issues.filter(i => i.status !== 'resolved');
+  const canReport = isOwnTrip && (trip.status === 'assigned' || trip.status === 'in_progress');
 
   async function handleClaim() {
     try {
@@ -230,6 +351,11 @@ function TripCard({ trip, driverId, canClaim }: { trip: Trip; driverId: string; 
               {trip.booking?.is_bpa_cargo && (
                 <span className="rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-bold text-red-600">
                   BPA · ต้องมี ท.4+ADR
+                </span>
+              )}
+              {openIssues.length > 0 && (
+                <span className="flex items-center gap-0.5 rounded-full bg-orange-100 px-2 py-0.5 text-[10px] font-bold text-orange-700">
+                  <AlertTriangle className="h-2.5 w-2.5" /> แจ้งปัญหาแล้ว{openIssues.length > 1 ? ` (${openIssues.length})` : ''}
                 </span>
               )}
             </div>
@@ -295,11 +421,19 @@ function TripCard({ trip, driverId, canClaim }: { trip: Trip; driverId: string; 
               ปิดงาน
             </button>
           )}
+          {canReport && (
+            <button onClick={() => setReporting(true)}
+              className="flex items-center justify-center gap-1.5 rounded-xl border border-red-200 bg-red-50 px-3 py-2.5 text-xs font-bold text-red-600 hover:bg-red-100">
+              <AlertTriangle className="h-3.5 w-3.5" />
+              แจ้งปัญหา
+            </button>
+          )}
         </div>
       </div>
 
       {starting && <StartTripModal trip={trip} onClose={() => setStarting(false)} />}
       {closing  && <CloseTripModal  trip={trip} onClose={() => setClosing(false)} />}
+      {reporting && <ReportIssueModal trip={trip} driverId={driverId} onClose={() => setReporting(false)} />}
     </>
   );
 }

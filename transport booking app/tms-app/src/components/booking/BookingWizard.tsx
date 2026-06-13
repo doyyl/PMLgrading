@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import {
   CalendarDays, ArrowRight, ArrowLeft, CheckCircle2,
-  Sun, Moon, AlertTriangle, Lightbulb, ChevronRight, Truck,
+  Sun, Moon, AlertTriangle, Lightbulb, ChevronRight, Truck, ArrowLeftRight,
 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
@@ -19,7 +19,7 @@ import type { RouteCategory } from '@/types';
 import { cn } from '@/lib/utils';
 
 // ─── State ───────────────────────────────────────────────────
-interface WizardState {
+export interface WizardState {
   // Step 1
   requested_date: string;
   reserve_date: string;
@@ -95,12 +95,14 @@ function ChipButton({ label, sub, selected, onClick, color = 'blue', icon }: {
 }
 
 // ─── Main wizard ─────────────────────────────────────────────
-export function BookingWizard() {
+export function BookingWizard({ initial }: { initial?: Partial<WizardState> } = {}) {
   const [step, setStep] = useState(0);
-  const [form, setForm] = useState<WizardState>(INIT);
+  const [form, setForm] = useState<WizardState>(() => ({ ...INIT, ...initial }));
   const [done, setDone] = useState(false);
   const createBooking = useCreateBooking();
   const navigate = useNavigate();
+
+  const swapRoute = () => setForm(p => ({ ...p, loading_place: p.delivery_place, delivery_place: p.loading_place }));
 
   const { data: sitesDb = [] } = useQuery({
     queryKey: ['sites'],
@@ -346,6 +348,14 @@ export function BookingWizard() {
 
           {/* Manual route */}
           <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-gray-600">ระบุเส้นทาง</span>
+              <button type="button" onClick={swapRoute}
+                disabled={!form.loading_place && !form.delivery_place}
+                className="flex items-center gap-1 rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1 text-[11px] font-semibold text-blue-600 hover:bg-blue-100 disabled:opacity-40 disabled:hover:bg-blue-50">
+                <ArrowLeftRight className="h-3 w-3" /> สลับต้นทาง-ปลายทาง
+              </button>
+            </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <label className="text-xs font-semibold text-gray-600">จุดรับของ <span className="text-red-500">*</span></label>
