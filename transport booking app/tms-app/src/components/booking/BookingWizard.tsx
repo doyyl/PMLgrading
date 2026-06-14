@@ -4,17 +4,18 @@ import { useQuery } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import {
   CalendarDays, ArrowRight, ArrowLeft, CheckCircle2,
-  Sun, Moon, AlertTriangle, Lightbulb, ChevronRight, Truck, ArrowLeftRight,
+  Sun, Moon, AlertTriangle, ArrowLeftRight,
 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { useCreateBooking } from '@/hooks/useBookings';
 import { createClient } from '@/lib/supabase/client';
 import {
-  SITES, CUSTOMERS, TRUCK_TYPES, ACTIVITIES,
-  LOADING_PLACES, DELIVERY_PLACES, CSR_CONTACTS, COMMON_ROUTES,
+  CUSTOMERS, TRUCK_TYPES,
+  LOADING_PLACES, DELIVERY_PLACES, CSR_CONTACTS,
   routeCategoryFromTruckType,
 } from '@/lib/reference-data';
+import { RouteSuggestPanel } from './RouteSuggestPanel';
 import type { RouteCategory } from '@/types';
 import { cn } from '@/lib/utils';
 
@@ -47,6 +48,10 @@ const BPA_CUSTOMERS = new Set(['BMSCPD', 'BMSCPDRM']);
 const HAZMAT_CUSTOMERS = new Set(['BMSCPD', 'BMSCPDRM', 'STYROLUTION', 'SOLVAY', 'SOLVAYTHAI']);
 
 const today = new Date().toISOString().split('T')[0];
+
+function parseCount(value: string): number {
+  return parseInt(value || '0') || 0;
+}
 
 const INIT: WizardState = {
   requested_date: today, reserve_date: today, shift: 'DAY', csr_contact: '',
@@ -94,6 +99,51 @@ function ChipButton({ label, sub, selected, onClick, color = 'blue', icon }: {
   );
 }
 
+// ─── Shift counter row ────────────────────────────────────────
+function ShiftCounter({ icon, label, timeFrom, timeTo, count, color, onTimeFrom, onTimeTo, onCount }: {
+  icon: React.ReactNode;
+  label: string;
+  timeFrom: string;
+  timeTo: string;
+  count: string;
+  color: 'amber' | 'indigo';
+  onTimeFrom: (v: string) => void;
+  onTimeTo: (v: string) => void;
+  onCount: (v: string) => void;
+}) {
+  const c = {
+    amber: { bg: 'bg-amber-50', border: 'border-amber-200', label: 'text-amber-700', input: 'border-amber-300', counter: 'bg-amber-200 text-amber-800 hover:bg-amber-300' },
+    indigo: { bg: 'bg-indigo-50', border: 'border-indigo-200', label: 'text-indigo-700', input: 'border-indigo-300', counter: 'bg-indigo-200 text-indigo-800 hover:bg-indigo-300' },
+  }[color];
+  const n = parseCount(count);
+  return (
+    <div className={cn('flex items-center gap-4 rounded-xl border px-4 py-3', c.bg, c.border)}>
+      <div className="shrink-0">{icon}</div>
+      <div className="flex-1">
+        <p className={cn('text-xs font-semibold mb-1', c.label)}>{label}</p>
+        <div className="flex items-center gap-2">
+          <input type="time" value={timeFrom} onChange={e => onTimeFrom(e.target.value)}
+            className={cn('w-24 rounded-lg border bg-white px-2 py-1 text-xs', c.input)} />
+          <span className="text-xs text-gray-400">–</span>
+          <input type="time" value={timeTo} onChange={e => onTimeTo(e.target.value)}
+            className={cn('w-24 rounded-lg border bg-white px-2 py-1 text-xs', c.input)} />
+        </div>
+      </div>
+      <div className="flex flex-col items-center gap-1">
+        <p className={cn('text-xs font-medium', c.label)}>เที่ยว</p>
+        <div className="flex items-center gap-1">
+          <button type="button" onClick={() => onCount(String(Math.max(0, n - 1)))}
+            className={cn('h-8 w-8 rounded-lg font-bold text-lg flex items-center justify-center', c.counter)}>−</button>
+          <input type="number" min={0} value={count} onChange={e => onCount(e.target.value)}
+            className={cn('w-12 rounded-lg border bg-white px-1 py-1 text-center font-bold text-base', c.input)} />
+          <button type="button" onClick={() => onCount(String(n + 1))}
+            className={cn('h-8 w-8 rounded-lg font-bold text-lg flex items-center justify-center', c.counter)}>+</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Main wizard ─────────────────────────────────────────────
 export function BookingWizard({ initial }: { initial?: Partial<WizardState> } = {}) {
   const [step, setStep] = useState(0);
@@ -118,11 +168,8 @@ export function BookingWizard({ initial }: { initial?: Partial<WizardState> } = 
 
   const isBpa    = BPA_CUSTOMERS.has(form.customer);
   const isHazmat = HAZMAT_CUSTOMERS.has(form.customer);
-  const suggestions = COMMON_ROUTES.filter(r => r.customer === form.customer);
 
-  const totalTrips =
-    (parseInt(form.day_trips   || '0') || 0) +
-    (parseInt(form.night_trips || '0') || 0);
+  const totalTrips = parseCount(form.day_trips) + parseCount(form.night_trips);
 
   async function submit() {
     const originSite = sitesDb.find(s => s.site_name === form.loading_place);
@@ -159,8 +206,8 @@ export function BookingWizard({ initial }: { initial?: Partial<WizardState> } = 
     // Auto-create individual trip records, split by shift
     if (totalTrips > 0 && booking?.id) {
       const supabase = createClient();
-      const dayCount   = parseInt(form.day_trips   || '0') || 0;
-      const nightCount = parseInt(form.night_trips || '0') || 0;
+      const dayCount   = parseCount(form.day_trips);
+      const nightCount = parseCount(form.night_trips);
       const base = {
         booking_id:     booking.id,
         scheduled_date: form.reserve_date,
@@ -267,6 +314,9 @@ export function BookingWizard({ initial }: { initial?: Partial<WizardState> } = 
               <select value={form.csr_contact} onChange={e => set('csr_contact', e.target.value)}
                 className="w-full rounded-xl border-2 border-gray-200 px-4 py-3 text-sm focus:border-blue-500 focus:outline-none">
                 <option value="">— เลือกผู้ติดต่อ (ถ้ามี) —</option>
+                {form.csr_contact && !(CSR_CONTACTS as readonly string[]).includes(form.csr_contact) && (
+                  <option value={form.csr_contact}>{form.csr_contact} (คุณ)</option>
+                )}
                 {CSR_CONTACTS.map(c => <option key={c}>{c}</option>)}
               </select>
             </div>
@@ -288,6 +338,11 @@ export function BookingWizard({ initial }: { initial?: Partial<WizardState> } = 
             <p className="text-2xl font-bold text-gray-900">🗺️ เส้นทาง</p>
             <p className="text-sm text-gray-500">เลือกลูกค้า จุดรับ และจุดส่ง</p>
           </div>
+
+          {/* Route suggestions / favourites — auto-fills customer + route + truck */}
+          <RouteSuggestPanel
+            onSelect={r => setForm(p => ({ ...p, customer: r.customer, loading_place: r.loading_place, delivery_place: r.delivery_place, truck_type: r.truck_type }))}
+          />
 
           {/* Customer picker — big grid */}
           <div className="space-y-2">
@@ -317,34 +372,6 @@ export function BookingWizard({ initial }: { initial?: Partial<WizardState> } = 
               </div>
             )}
           </div>
-
-          {/* Route quick-fill */}
-          {suggestions.length > 0 && (
-            <div className="space-y-2">
-              <div className="flex items-center gap-1.5 text-xs text-amber-700 font-medium">
-                <Lightbulb className="h-3.5 w-3.5" />
-                เส้นทางที่ใช้บ่อย — กดเพื่อเติมอัตโนมัติ
-              </div>
-              {suggestions.map((r, i) => (
-                <button key={i} type="button"
-                  onClick={() => { set('loading_place', r.loading); set('delivery_place', r.delivery); set('truck_type', r.truck_type); }}
-                  className={cn(
-                    'w-full flex items-center gap-3 rounded-xl border-2 px-4 py-3 text-sm transition-all text-left',
-                    form.loading_place === r.loading && form.delivery_place === r.delivery
-                      ? 'border-amber-400 bg-amber-50'
-                      : 'border-gray-200 hover:border-amber-300 hover:bg-amber-50/40'
-                  )}>
-                  <Truck className="h-4 w-4 text-amber-600 shrink-0" />
-                  <span className="font-semibold text-gray-800">{r.loading}</span>
-                  <ChevronRight className="h-4 w-4 text-gray-400" />
-                  <span className="font-semibold text-gray-800">{r.delivery}</span>
-                  <span className="ml-auto text-xs text-gray-400 shrink-0 max-w-[80px] text-right leading-tight">
-                    {r.truck_type.split('(')[0].trim()}
-                  </span>
-                </button>
-              ))}
-            </div>
-          )}
 
           {/* Manual route */}
           <div className="space-y-3">
@@ -476,57 +503,25 @@ export function BookingWizard({ initial }: { initial?: Partial<WizardState> } = 
             <label className="text-sm font-semibold text-gray-700">จำนวนเที่ยว</label>
 
             {(form.shift === 'DAY' || form.shift === 'BOTH') && (
-              <div className="flex items-center gap-4 rounded-xl bg-amber-50 border border-amber-200 px-4 py-3">
-                <Sun className="h-5 w-5 text-amber-500 shrink-0" />
-                <div className="flex-1">
-                  <p className="text-xs font-semibold text-amber-700 mb-1">กะกลางวัน (07:00–19:00)</p>
-                  <div className="flex items-center gap-2">
-                    <input type="time" value={form.day_time_from} onChange={e=>set('day_time_from',e.target.value)}
-                      className="w-24 rounded-lg border border-amber-300 bg-white px-2 py-1 text-xs" />
-                    <span className="text-xs text-gray-400">–</span>
-                    <input type="time" value={form.day_time_to} onChange={e=>set('day_time_to',e.target.value)}
-                      className="w-24 rounded-lg border border-amber-300 bg-white px-2 py-1 text-xs" />
-                  </div>
-                </div>
-                <div className="flex flex-col items-center gap-1">
-                  <p className="text-xs text-amber-700 font-medium">เที่ยว</p>
-                  <div className="flex items-center gap-1">
-                    <button type="button" onClick={()=>set('day_trips', String(Math.max(0,(parseInt(form.day_trips)||0)-1)))}
-                      className="h-8 w-8 rounded-lg bg-amber-200 text-amber-800 font-bold text-lg flex items-center justify-center hover:bg-amber-300">−</button>
-                    <input type="number" min={0} value={form.day_trips} onChange={e=>set('day_trips',e.target.value)}
-                      className="w-12 rounded-lg border border-amber-300 bg-white px-1 py-1 text-center font-bold text-base" />
-                    <button type="button" onClick={()=>set('day_trips', String((parseInt(form.day_trips)||0)+1))}
-                      className="h-8 w-8 rounded-lg bg-amber-200 text-amber-800 font-bold text-lg flex items-center justify-center hover:bg-amber-300">+</button>
-                  </div>
-                </div>
-              </div>
+              <ShiftCounter
+                icon={<Sun className="h-5 w-5 text-amber-500" />}
+                label="กะกลางวัน (07:00–19:00)"
+                color="amber"
+                timeFrom={form.day_time_from} onTimeFrom={v => set('day_time_from', v)}
+                timeTo={form.day_time_to}     onTimeTo={v => set('day_time_to', v)}
+                count={form.day_trips}        onCount={v => set('day_trips', v)}
+              />
             )}
 
             {(form.shift === 'NIGHT' || form.shift === 'BOTH') && (
-              <div className="flex items-center gap-4 rounded-xl bg-indigo-50 border border-indigo-200 px-4 py-3">
-                <Moon className="h-5 w-5 text-indigo-500 shrink-0" />
-                <div className="flex-1">
-                  <p className="text-xs font-semibold text-indigo-700 mb-1">กะกลางคืน (19:00–07:00)</p>
-                  <div className="flex items-center gap-2">
-                    <input type="time" value={form.night_time_from} onChange={e=>set('night_time_from',e.target.value)}
-                      className="w-24 rounded-lg border border-indigo-300 bg-white px-2 py-1 text-xs" />
-                    <span className="text-xs text-gray-400">–</span>
-                    <input type="time" value={form.night_time_to} onChange={e=>set('night_time_to',e.target.value)}
-                      className="w-24 rounded-lg border border-indigo-300 bg-white px-2 py-1 text-xs" />
-                  </div>
-                </div>
-                <div className="flex flex-col items-center gap-1">
-                  <p className="text-xs text-indigo-700 font-medium">เที่ยว</p>
-                  <div className="flex items-center gap-1">
-                    <button type="button" onClick={()=>set('night_trips', String(Math.max(0,(parseInt(form.night_trips)||0)-1)))}
-                      className="h-8 w-8 rounded-lg bg-indigo-200 text-indigo-800 font-bold text-lg flex items-center justify-center hover:bg-indigo-300">−</button>
-                    <input type="number" min={0} value={form.night_trips} onChange={e=>set('night_trips',e.target.value)}
-                      className="w-12 rounded-lg border border-indigo-300 bg-white px-1 py-1 text-center font-bold text-base" />
-                    <button type="button" onClick={()=>set('night_trips', String((parseInt(form.night_trips)||0)+1))}
-                      className="h-8 w-8 rounded-lg bg-indigo-200 text-indigo-800 font-bold text-lg flex items-center justify-center hover:bg-indigo-300">+</button>
-                  </div>
-                </div>
-              </div>
+              <ShiftCounter
+                icon={<Moon className="h-5 w-5 text-indigo-500" />}
+                label="กะกลางคืน (19:00–07:00)"
+                color="indigo"
+                timeFrom={form.night_time_from} onTimeFrom={v => set('night_time_from', v)}
+                timeTo={form.night_time_to}     onTimeTo={v => set('night_time_to', v)}
+                count={form.night_trips}        onCount={v => set('night_trips', v)}
+              />
             )}
           </div>
 

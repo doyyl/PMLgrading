@@ -43,9 +43,11 @@ const STATUS_DOT: Record<Trip['status'], string> = {
   cancelled:   'bg-red-400',
 };
 
-function todayStr() { return new Date().toISOString().split('T')[0]; }
+function todayStr() {
+  return new Date().toISOString().split('T')[0];
+}
 function tomorrowStr() {
-  const d = new Date(); d.setDate(d.getDate() + 1);
+  const d = new Date(Date.now() + 86400000);
   return d.toISOString().split('T')[0];
 }
 function fmtShort(date: string | null) {
@@ -196,6 +198,9 @@ function VehicleSelect({ vehicles, value, onChange }: {
   );
 }
 
+type AssignMode = 'kns' | 'sub';
+type ShiftFilter = 'all' | 'Day' | 'Night';
+
 function AssignModal({ trip, drivers, vehicles, onClose }: {
   trip: Trip;
   drivers: DriverOption[];
@@ -210,15 +215,36 @@ function AssignModal({ trip, drivers, vehicles, onClose }: {
   const [selected, setSelected] = useState(trip.driver?.id ?? '');
   const [vehicleId, setVehicleId] = useState(trip.vehicle_id ?? '');
   const [confirmCancel, setConfirmCancel] = useState(false);
+  const [assignMode, setAssignMode] = useState<AssignMode>('kns');
+  const [shiftFilter, setShiftFilter] = useState<ShiftFilter>('all');
+  const [contractorName, setContractorName] = useState('');
   const isReassign = !!trip.driver;
   const isBpa = !!trip.booking?.is_bpa_cargo;
   const busy = assignTrip.isPending || unassignTrip.isPending || cancelTrip.isPending;
 
+  // KNS: filter by selected shift
+  const driversForShift = assignMode === 'kns' && shiftFilter !== 'all' && onShift
+    ? drivers.filter(d => onShift.get(d.id) === shiftFilter)
+    : drivers;
+
+  // Sub Contractor: only subcontract vehicles
+  const subVehicles = vehicles.filter(v => v.ownership === 'Subcontract');
+
+  const confirmDisabled = assignMode === 'kns' ? !selected : !vehicleId;
+
   async function confirm() {
-    if (!selected) return;
+    if (confirmDisabled) return;
     try {
-      await assignTrip.mutateAsync({ tripId: trip.id, driverId: selected, vehicleId: vehicleId || null });
-      toast.success(isReassign ? 'เปลี่ยนพนักงานสำเร็จ' : 'มอบหมายงานสำเร็จ');
+      await assignTrip.mutateAsync({
+        tripId: trip.id,
+        driverId: assignMode === 'sub' ? null : selected,
+        vehicleId: vehicleId || null,
+      });
+      if (assignMode === 'sub') {
+        toast.success(`มอบหมาย Sub Contractor${contractorName ? ` (${contractorName})` : ''} สำเร็จ`);
+      } else {
+        toast.success(isReassign ? 'เปลี่ยนพนักงานสำเร็จ' : 'มอบหมายงานสำเร็จ');
+      }
       onClose();
     } catch (e: unknown) {
       toast.error((e as Error).message);
@@ -275,26 +301,92 @@ function AssignModal({ trip, drivers, vehicles, onClose }: {
           </div>
         )}
 
-        {/* Driver selector */}
-        <div className="space-y-1.5">
-          <label className="text-xs font-semibold text-gray-600">
-            {isReassign ? 'เปลี่ยนเป็น' : 'เลือกพนักงานขับรถ'}
-          </label>
-          {isBpa && (
-            <div className="flex items-center gap-2 rounded-xl bg-red-50 border border-red-200 px-3 py-2 text-[11px] text-red-700 font-medium">
-              <AlertCircle className="h-3.5 w-3.5 shrink-0" />
-              สินค้า BPA — เลือกได้เฉพาะ พขร. ใบ ท.4 + ADR ที่ยังไม่หมดอายุ
-            </div>
-          )}
-          <DriverPicker drivers={drivers} selected={selected} onSelect={setSelected}
-            dayLoad={dayLoad} onShift={onShift} isBpa={isBpa} />
+        {/* Assignment mode toggle */}
+        <div className="flex rounded-xl border border-gray-200 overflow-hidden">
+          <button onClick={() => setAssignMode('kns')}
+            className={cn('flex-1 py-2 text-xs font-semibold transition-colors',
+              assignMode === 'kns' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50')}>
+            🏢 KNS (รถบริษัท)
+          </button>
+          <button onClick={() => setAssignMode('sub')}
+            className={cn('flex-1 py-2 text-xs font-semibold border-l border-gray-200 transition-colors',
+              assignMode === 'sub' ? 'bg-emerald-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50')}>
+            🤝 Sub Contractor
+          </button>
         </div>
 
-        {/* Vehicle selector (optional) */}
-        <div className="space-y-1.5">
-          <label className="text-xs font-semibold text-gray-600">รถ (ไม่บังคับ) — KNS / Subcontractor</label>
-          <VehicleSelect vehicles={vehicles} value={vehicleId} onChange={setVehicleId} />
-        </div>
+        {/* KNS mode: shift filter + driver picker */}
+        {assignMode === 'kns' && (
+          <>
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-gray-600">กรองตามกะ (เลือก OP ก่อน)</label>
+              {/* TODO: link with MAS for live shift data */}
+              <div className="flex gap-2">
+                {([
+                  { value: 'all',   label: 'ทั้งหมด' },
+                  { value: 'Day',   label: '☀️ กะวัน' },
+                  { value: 'Night', label: '🌙 กะดึก' },
+                ] as { value: ShiftFilter; label: string }[]).map(s => (
+                  <button key={s.value} onClick={() => setShiftFilter(s.value)}
+                    className={cn(
+                      'rounded-xl px-3 py-1.5 text-xs font-semibold transition-colors',
+                      shiftFilter === s.value
+                        ? 'bg-blue-600 text-white shadow-sm'
+                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    )}>
+                    {s.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-gray-600">
+                {isReassign ? 'เปลี่ยนเป็น' : 'เลือกพนักงานขับรถ (OP)'}
+              </label>
+              {isBpa && (
+                <div className="flex items-center gap-2 rounded-xl bg-red-50 border border-red-200 px-3 py-2 text-[11px] text-red-700 font-medium">
+                  <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                  สินค้า BPA — เลือกได้เฉพาะ พขร. ใบ ท.4 + ADR ที่ยังไม่หมดอายุ
+                </div>
+              )}
+              <DriverPicker drivers={driversForShift} selected={selected} onSelect={setSelected}
+                dayLoad={dayLoad} onShift={onShift} isBpa={isBpa} />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-gray-600">รถ KNS (ไม่บังคับ)</label>
+              <VehicleSelect vehicles={vehicles.filter(v => v.ownership === 'KNS')} value={vehicleId} onChange={setVehicleId} />
+            </div>
+          </>
+        )}
+
+        {/* Sub Contractor mode: vehicle + optional company name */}
+        {assignMode === 'sub' && (
+          <>
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-gray-600">รถผู้รับเหมา <span className="text-red-500">*</span></label>
+              {subVehicles.length === 0 ? (
+                <p className="rounded-xl border border-dashed border-gray-200 px-4 py-3 text-xs text-gray-400 text-center">
+                  ไม่พบรถผู้รับเหมาในระบบ
+                </p>
+              ) : (
+                <VehicleSelect vehicles={subVehicles} value={vehicleId} onChange={setVehicleId} />
+              )}
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-gray-600">ชื่อบริษัทผู้รับเหมา (ไม่บังคับ)</label>
+              <input
+                type="text"
+                value={contractorName}
+                onChange={e => setContractorName(e.target.value)}
+                placeholder="เช่น บ. ขนส่งไทย จำกัด"
+                className="w-full rounded-xl border-2 border-gray-200 px-3 py-2.5 text-sm focus:border-emerald-500 focus:outline-none"
+              />
+            </div>
+          </>
+        )}
 
         {/* Unassign / cancel */}
         <div className="flex gap-2">
@@ -325,14 +417,19 @@ function AssignModal({ trip, drivers, vehicles, onClose }: {
             className="flex-1 rounded-xl border border-gray-200 py-3 text-sm font-semibold text-gray-600 hover:bg-gray-50">
             ยกเลิก
           </button>
-          <button onClick={confirm} disabled={!selected || assignTrip.isPending}
-            className="flex-1 rounded-xl bg-blue-600 py-3 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-40 transition-colors">
+          <button onClick={confirm} disabled={confirmDisabled || assignTrip.isPending}
+            className={cn(
+              'flex-1 rounded-xl py-3 text-sm font-semibold text-white disabled:opacity-40 transition-colors',
+              assignMode === 'sub' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-blue-600 hover:bg-blue-700'
+            )}>
             {assignTrip.isPending
               ? <span className="flex items-center justify-center gap-2">
                   <span className="h-4 w-4 rounded-full border-2 border-white/40 border-t-white animate-spin" />
                   กำลังบันทึก
                 </span>
-              : isReassign ? 'เปลี่ยนพนักงาน' : 'มอบหมาย'}
+              : assignMode === 'sub'
+                ? 'มอบหมาย Sub Contractor'
+                : isReassign ? 'เปลี่ยนพนักงาน' : 'มอบหมาย'}
           </button>
         </div>
       </div>
@@ -737,7 +834,7 @@ export default function PlanningPage() {
     },
   });
 
-  // ── Date filter ───────────────────────────────────────────
+  // ── Date constants (computed once per render) ─────────────
   const today    = todayStr();
   const tomorrow = tomorrowStr();
 

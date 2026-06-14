@@ -46,15 +46,18 @@ export const ISSUE_TYPES = [
   { value: 'other',     label: 'อื่นๆ',            icon: '❓' },
 ] as const;
 
+function findIssueType(value: string) {
+  return ISSUE_TYPES.find(t => t.value === value);
+}
 export function issueTypeLabel(value: string) {
-  return ISSUE_TYPES.find(t => t.value === value)?.label ?? value;
+  return findIssueType(value)?.label ?? value;
 }
 export function issueTypeIcon(value: string) {
-  return ISSUE_TYPES.find(t => t.value === value)?.icon ?? '❗';
+  return findIssueType(value)?.icon ?? '❗';
 }
 
-const WEEK_AGO = () => new Date(Date.now() - 7 * 86400000).toISOString().split('T')[0];
-const TODAY    = () => new Date().toISOString().split('T')[0];
+function weekAgo() { return new Date(Date.now() - 7 * 86400000).toISOString().split('T')[0]; }
+function todayStr() { return new Date().toISOString().split('T')[0]; }
 
 // ── Planning board — all trips ────────────────────────────────
 export function useAllTrips() {
@@ -70,7 +73,7 @@ export function useAllTrips() {
           driver:drivers(id, name),
           vehicle:vehicles(id, plate_number)
         `)
-        .gte('scheduled_date', WEEK_AGO())
+        .gte('scheduled_date', weekAgo())
         // cancelled trips are kept so the planning board can show them
         .order('scheduled_date', { ascending: false })
         .order('customer')
@@ -87,7 +90,7 @@ export function usePlanningStats() {
     queryKey: ['planning-stats'],
     refetchInterval: 20_000,
     queryFn: async () => {
-      const today = TODAY();
+      const today = todayStr();
       const supabase = createClient();
       const [bk, trips] = await Promise.all([
         supabase.from('bookings').select('id', { count: 'exact', head: true }),
@@ -120,7 +123,7 @@ export function useDriverTrips(driverId: string | null) {
           vehicle:vehicles(id, plate_number)
         `)
         .eq('driver_id', driverId!)
-        .gte('scheduled_date', WEEK_AGO())
+        .gte('scheduled_date', weekAgo())
         .neq('status', 'cancelled')
         .order('scheduled_date', { ascending: false })
         .order('trip_number');
@@ -143,7 +146,7 @@ export function useUnassignedTrips() {
           booking:bookings!trips_booking_id_fkey(booking_ref, vehicle_type, is_bpa_cargo)
         `)
         .eq('status', 'unassigned')
-        .gte('scheduled_date', TODAY())
+        .gte('scheduled_date', todayStr())
         .order('scheduled_date')
         .order('customer')
         .order('trip_number');
@@ -166,7 +169,7 @@ export function useTrackingTrips() {
           booking:bookings!trips_booking_id_fkey(booking_ref, vehicle_type, cargo_type),
           driver:drivers(id, name)
         `)
-        .gte('scheduled_date', TODAY())
+        .gte('scheduled_date', todayStr())
         .not('status', 'in', '("unassigned","cancelled")')
         .order('driver_id')
         .order('trip_number');
@@ -255,8 +258,8 @@ export function useClaimTrip() {
 export function useAssignTrip() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ tripId, driverId, vehicleId }: { tripId: string; driverId: string; vehicleId?: string | null }) => {
-      await assertBpaQualified(tripId, driverId);
+    mutationFn: async ({ tripId, driverId, vehicleId }: { tripId: string; driverId: string | null; vehicleId?: string | null }) => {
+      if (driverId) await assertBpaQualified(tripId, driverId);
       const { error } = await createClient()
         .from('trips')
         .update({

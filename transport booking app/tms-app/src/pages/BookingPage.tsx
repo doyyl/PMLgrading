@@ -48,7 +48,7 @@ function bookingToWizardInit(b: HistoryRow): Partial<WizardState> {
   };
 }
 
-// ── Admin dashboard stats ─────────────────────────────────────
+// ── Hooks ─────────────────────────────────────────────────────
 
 function useAdminStats() {
   return useQuery({
@@ -119,7 +119,10 @@ function StatTile({ icon, label, value, sub, color }: {
 
 // ── Dashboard Tab ─────────────────────────────────────────────
 
-function DashboardTab() {
+function DashboardTab({ recentBookings, onDuplicate }: {
+  recentBookings: HistoryRow[];
+  onDuplicate: (b: HistoryRow) => void;
+}) {
   const { data: stats, isLoading } = useAdminStats();
   const { displayName } = useRole();
 
@@ -162,6 +165,31 @@ function DashboardTab() {
             </div>
           </div>
         </>
+      )}
+
+      {/* Quick rebook — last 3 non-cancelled bookings */}
+      {recentBookings.length > 0 && (
+        <div>
+          <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3 px-1">จองซ้ำด่วน</p>
+          <div className="space-y-2">
+            {recentBookings.slice(0, 3).map(b => (
+              <button key={b.id} onClick={() => onDuplicate(b)}
+                className="w-full flex items-center gap-3 rounded-2xl border border-gray-100 bg-white px-4 py-3 text-left hover:border-blue-200 hover:bg-blue-50/50 transition-colors shadow-sm">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-gray-800 truncate">
+                    {b.customer ?? b.site?.site_name ?? '–'}
+                  </p>
+                  <p className="text-xs text-gray-400 truncate">
+                    {b.loading_place ?? '?'} → {b.delivery_place ?? '?'} · {b.vehicle_type}
+                  </p>
+                </div>
+                <span className="shrink-0 flex items-center gap-1 rounded-lg bg-blue-50 border border-blue-200 px-2.5 py-1.5 text-xs font-semibold text-blue-600">
+                  <Copy className="h-3 w-3" /> จองซ้ำ
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
       )}
     </div>
   );
@@ -299,6 +327,10 @@ export default function BookingPage() {
   const [tab, setTab] = useState<AdminTab>('dashboard');
   const [dupInit, setDupInit] = useState<Partial<WizardState> | null>(null);
   const [wizardKey, setWizardKey] = useState(0);
+  const { displayName } = useRole();
+  const { data: allBookings = [] } = useBookingHistory();
+
+  const recentBookings = allBookings.filter(b => b.status !== 'Cancelled');
 
   // Duplicate a past booking → pre-fill a fresh wizard and jump to it
   const handleDuplicate = (b: HistoryRow) => {
@@ -334,7 +366,9 @@ export default function BookingPage() {
           ))}
         </div>
 
-        {tab === 'dashboard' && <DashboardTab />}
+        {tab === 'dashboard' && (
+          <DashboardTab recentBookings={recentBookings} onDuplicate={handleDuplicate} />
+        )}
 
         {tab === 'booking' && (
           <>
@@ -352,7 +386,10 @@ export default function BookingPage() {
               </div>
             )}
             <div className="rounded-3xl bg-white p-6 shadow-sm border border-gray-100">
-              <BookingWizard key={wizardKey} initial={dupInit ?? undefined} />
+              <BookingWizard
+                key={wizardKey}
+                initial={dupInit ?? (displayName ? { csr_contact: displayName } : undefined)}
+              />
             </div>
           </>
         )}
