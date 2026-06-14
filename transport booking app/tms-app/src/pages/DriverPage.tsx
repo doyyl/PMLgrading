@@ -1,5 +1,6 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useRole } from '@/context/role';
+import { createClient } from '@/lib/supabase/client';
 import {
   useDriverTrips, useUnassignedTrips,
   useClaimTrip, useStartTrip, useCompleteTrip, uploadTripPhoto,
@@ -12,6 +13,55 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import toast from 'react-hot-toast';
+
+// Resolves a missing driverId without requiring logout + re-login.
+// Handles the common case where migration 009 was run after the driver
+// already had a session (localStorage still has driverId = null).
+function useResolveDriverId() {
+  const { role, userId, driverId, displayName, setDriverIdentity } = useRole();
+  const [resolving, setResolving] = useState(false);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    if (role !== 'driver' || driverId || !userId) return;
+
+    setResolving(true);
+    const supabase = createClient();
+
+    async function resolve() {
+      // Step 1: Re-read own app_users row — picks up driver_id fixed by migration 009
+      const { data: profile } = await supabase
+        .from('app_users')
+        .select('driver_id, display_name')
+        .eq('id', userId!)
+        .maybeSingle<{ driver_id: string | null; display_name: string }>();
+
+      if (profile?.driver_id) {
+        setDriverIdentity(profile.driver_id, profile.display_name ?? displayName ?? '');
+        return;
+      }
+
+      // Step 2: Try to match by display_name = drivers.name (works even without Supabase Auth)
+      if (displayName) {
+        const { data: driver } = await supabase
+          .from('drivers')
+          .select('id')
+          .eq('name', displayName)
+          .maybeSingle<{ id: string }>();
+        if (driver) {
+          setDriverIdentity(driver.id, displayName);
+          return;
+        }
+      }
+
+      setFailed(true);
+    }
+
+    void resolve().catch(() => setFailed(true)).finally(() => setResolving(false));
+  }, [role, driverId, userId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  return { resolving, failed };
+}
 
 // ── Helpers ───────────────────────────────────────────────────
 
@@ -443,6 +493,7 @@ function TripCard({ trip, driverId, canClaim }: { trip: Trip; driverId: string; 
 
 export default function DriverPage() {
   const { driverId, displayName } = useRole();
+  const { resolving, failed } = useResolveDriverId();
   const [search, setSearch] = useState('');
   const [tab, setTab] = useState<'mine' | 'available'>('mine');
 
@@ -471,17 +522,30 @@ export default function DriverPage() {
   const done   = myTrips.filter(t => t.status === 'completed').length;
 
   if (!driverId) {
-    return (
+    if (resolving) return (
+      <div className="flex min-h-screen items-center justify-center bg-gray-50">
+        <div className="flex flex-col items-center gap-3">
+          <div className="h-8 w-8 rounded-full border-2 border-emerald-300 border-t-emerald-600 animate-spin" />
+          <p className="text-sm text-gray-500">กำลังตรวจสอบข้อมูลคนขับ...</p>
+        </div>
+      </div>
+    );
+
+    if (failed) return (
       <div className="flex min-h-screen items-center justify-center bg-gray-50 p-6">
         <div className="text-center max-w-xs space-y-3">
           <AlertCircle className="h-12 w-12 text-amber-400 mx-auto" />
           <p className="font-semibold text-gray-700">ไม่พบข้อมูลพนักงานขับรถ</p>
           <p className="text-sm text-gray-500">
-            บัญชีนี้ยังไม่ผูกกับข้อมูลคนขับ — ให้แอดมินรัน migration 009 ใน Supabase SQL Editor แล้ว log out และ log in ใหม่
+            บัญชีนี้ยังไม่ผูกกับข้อมูลคนขับ — ให้แอดมินรัน migration 009 ใน Supabase SQL Editor แล้ว Log Out และ Log In ใหม่
           </p>
         </div>
       </div>
     );
+
+    // Still resolving but resolving state is already false and driverId still null
+    // → render nothing, let the next render cycle show the resolved state
+    return null;
   }
 
   return (
