@@ -9,8 +9,19 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [showPw, setShowPw] = useState(false);
   const navigate = useNavigate();
-  const { role, login } = useRole();
+  const { role, isInitializing, login } = useRole();
   const { mutate, isPending, error } = useLoginMutation();
+
+  if (isInitializing) return (
+    <div className="flex h-screen items-center justify-center bg-slate-900">
+      <div className="flex flex-col items-center gap-4">
+        <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-500 text-white font-black text-sm">
+          TMS
+        </div>
+        <div className="h-5 w-5 rounded-full border-2 border-blue-400/30 border-t-blue-400 animate-spin" />
+      </div>
+    </div>
+  );
 
   // Already logged in — go straight to the role's home page
   if (role) return <Navigate to={ROLE_HOME[role]} replace />;

@@ -44,6 +44,18 @@ async function supabaseAuthLogin(username: string, password: string): Promise<Ap
     await supabase.auth.signOut();
     throw new Error('บัญชีนี้ยังไม่ได้ผูกกับโปรไฟล์ — รัน migration 006 ให้ครบ');
   }
+
+  // Self-healing: if driver_id is missing (migration 009 not yet run), resolve it now.
+  // The authenticated session allows SELECT on drivers under RLS.
+  if (profile.role === 'driver' && !profile.driver_id) {
+    const { data: driver } = await supabase
+      .from('drivers')
+      .select('id')
+      .eq('employee_id', profile.username)
+      .maybeSingle<{ id: string }>();
+    if (driver) profile.driver_id = driver.id;
+  }
+
   return toAppUser(profile);
 }
 

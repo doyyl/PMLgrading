@@ -12,11 +12,13 @@ import TrackingPage from '@/pages/TrackingPage';
 import SustainabilityPage from '@/pages/SustainabilityPage';
 import DriverPage from '@/pages/DriverPage';
 import ManagerPage from '@/pages/ManagerPage';
+import ComingSoonPage from '@/pages/ComingSoonPage';
 
-// Redirects to login when logged out, or to the user's home page
-// when their role has no access to the requested route.
+// Waits for session bootstrap, then redirects to login when logged out,
+// or to the user's home when their role has no access to this route.
 function RequireRole({ roles, children }: { roles: AppRole[]; children: ReactNode }) {
-  const { role } = useRole();
+  const { role, isInitializing } = useRole();
+  if (isInitializing) return null;
   if (!role) return <Navigate to="/" replace />;
   if (!roles.includes(role)) return <Navigate to={ROLE_HOME[role]} replace />;
   return <>{children}</>;
@@ -32,13 +34,13 @@ function AppRoutes() {
           <RequireRole roles={['admin', 'manager']}><DashboardPage /></RequireRole>
         } />
         <Route path="/booking" element={
-          <RequireRole roles={['admin']}><BookingPage /></RequireRole>
+          <RequireRole roles={['admin', 'logistics', 'cs']}><BookingPage /></RequireRole>
         } />
         <Route path="/planning" element={
-          <RequireRole roles={['admin', 'manager']}><PlanningPage /></RequireRole>
+          <RequireRole roles={['admin', 'manager', 'supervisor', 'planner']}><PlanningPage /></RequireRole>
         } />
         <Route path="/tracking" element={
-          <RequireRole roles={['admin', 'manager']}><TrackingPage /></RequireRole>
+          <RequireRole roles={['admin', 'manager', 'supervisor']}><TrackingPage /></RequireRole>
         } />
         <Route path="/tracking/sustainability" element={
           <RequireRole roles={['admin', 'manager']}><SustainabilityPage /></RequireRole>
@@ -48,6 +50,12 @@ function AppRoutes() {
         } />
         <Route path="/manager" element={
           <RequireRole roles={['manager']}><ManagerPage /></RequireRole>
+        } />
+        <Route path="/wms/*" element={
+          <RequireRole roles={['warehouse_op', 'supervisor', 'planner', 'admin']}><ComingSoonPage /></RequireRole>
+        } />
+        <Route path="/outbound/*" element={
+          <RequireRole roles={['logistics', 'cs', 'admin']}><ComingSoonPage /></RequireRole>
         } />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

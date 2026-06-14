@@ -5,6 +5,7 @@ import { useState } from 'react';
 import {
   LayoutDashboard, CalendarPlus, MapPin, Activity,
   Leaf, ChevronLeft, ChevronRight, Truck, BarChart3, LogOut,
+  Package, ClipboardList, Settings2, Send, Headphones,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useRole, type AppRole } from '@/context/role';
@@ -29,12 +30,35 @@ const NAV_BY_ROLE: Record<AppRole, NavItem[]> = {
     { href: '/tracking',  icon: Activity,         th: 'ติดตามรถ',   en: 'Tracking' },
     { href: '/tracking/sustainability', icon: Leaf, th: 'CO₂ / EV', en: 'Sustainability' },
   ],
+  warehouse_op: [
+    { href: '/wms/packout',         icon: Package,       th: 'แพ็กเอ้าท์',  en: 'Packout' },
+  ],
+  supervisor: [
+    { href: '/wms/warehouse-daily', icon: ClipboardList, th: 'รายงานรายวัน', en: 'Daily Report' },
+    { href: '/wms/packout',         icon: Package,       th: 'แพ็กเอ้าท์',  en: 'Packout' },
+  ],
+  planner: [
+    { href: '/wms/planning',        icon: Settings2,     th: 'วางแผน WMS',   en: 'WMS Planning' },
+  ],
+  logistics: [
+    { href: '/outbound/domestic',   icon: Send,          th: 'จัดส่ง',       en: 'Outbound' },
+    { href: '/booking',             icon: CalendarPlus,  th: 'จองรถ',        en: 'Booking' },
+  ],
+  cs: [
+    { href: '/booking',             icon: CalendarPlus,  th: 'จองรถ',        en: 'Booking' },
+    { href: '/outbound/domestic',   icon: Headphones,    th: 'ออเดอร์',      en: 'Orders' },
+  ],
 };
 
 const ROLE_LABEL: Record<AppRole, { label: string; color: string }> = {
-  admin:   { label: 'Admin',           color: 'bg-blue-100 text-blue-700' },
-  driver:  { label: 'พนักงานขับรถ',    color: 'bg-emerald-100 text-emerald-700' },
-  manager: { label: 'ผู้จัดการระบบ',    color: 'bg-purple-100 text-purple-700' },
+  admin:         { label: 'Admin',           color: 'bg-blue-100 text-blue-700' },
+  driver:        { label: 'พนักงานขับรถ',    color: 'bg-emerald-100 text-emerald-700' },
+  manager:       { label: 'ผู้จัดการระบบ',    color: 'bg-purple-100 text-purple-700' },
+  warehouse_op:  { label: 'Warehouse OP',    color: 'bg-orange-100 text-orange-700' },
+  supervisor:    { label: 'Supervisor',      color: 'bg-amber-100 text-amber-700' },
+  planner:       { label: 'Planner',         color: 'bg-teal-100 text-teal-700' },
+  logistics:     { label: 'Logistics',       color: 'bg-indigo-100 text-indigo-700' },
+  cs:            { label: 'Customer Service', color: 'bg-pink-100 text-pink-700' },
 };
 
 export function Sidebar() {

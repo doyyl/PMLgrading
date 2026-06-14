@@ -15,6 +15,17 @@ import toast from 'react-hot-toast';
 
 // ── Helpers ───────────────────────────────────────────────────
 
+function readPhotoFile(
+  e: React.ChangeEvent<HTMLInputElement>,
+  onResult: (file: File, preview: string) => void,
+) {
+  const f = e.target.files?.[0];
+  if (!f) return;
+  const reader = new FileReader();
+  reader.onload = ev => onResult(f, ev.target?.result as string);
+  reader.readAsDataURL(f);
+}
+
 const STATUS_LABEL: Record<Trip['status'], string> = {
   unassigned:  'รอมอบหมาย',
   assigned:    'มอบหมายแล้ว',
@@ -107,12 +118,7 @@ function CloseTripModal({ trip, onClose }: { trip: Trip; onClose: () => void }) 
   const fileRef = useRef<HTMLInputElement>(null);
 
   function handlePhoto(e: React.ChangeEvent<HTMLInputElement>) {
-    const f = e.target.files?.[0];
-    if (!f) return;
-    setPhoto(f);
-    const reader = new FileReader();
-    reader.onload = ev => setPreview(ev.target?.result as string);
-    reader.readAsDataURL(f);
+    readPhotoFile(e, (file, preview) => { setPhoto(file); setPreview(preview); });
   }
 
   async function handleSubmit() {
@@ -211,12 +217,7 @@ function ReportIssueModal({ trip, driverId, onClose }: { trip: Trip; driverId: s
   const fileRef = useRef<HTMLInputElement>(null);
 
   function handlePhoto(e: React.ChangeEvent<HTMLInputElement>) {
-    const f = e.target.files?.[0];
-    if (!f) return;
-    setPhoto(f);
-    const reader = new FileReader();
-    reader.onload = ev => setPreview(ev.target?.result as string);
-    reader.readAsDataURL(f);
+    readPhotoFile(e, (file, preview) => { setPhoto(file); setPreview(preview); });
   }
 
   async function submit() {
@@ -472,10 +473,12 @@ export default function DriverPage() {
   if (!driverId) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-gray-50 p-6">
-        <div className="text-center">
-          <AlertCircle className="h-12 w-12 text-amber-400 mx-auto mb-3" />
+        <div className="text-center max-w-xs space-y-3">
+          <AlertCircle className="h-12 w-12 text-amber-400 mx-auto" />
           <p className="font-semibold text-gray-700">ไม่พบข้อมูลพนักงานขับรถ</p>
-          <p className="text-sm text-gray-500 mt-1">กรุณาล็อกอินด้วยบัญชี driver</p>
+          <p className="text-sm text-gray-500">
+            บัญชีนี้ยังไม่ผูกกับข้อมูลคนขับ — ให้แอดมินรัน migration 009 ใน Supabase SQL Editor แล้ว log out และ log in ใหม่
+          </p>
         </div>
       </div>
     );
