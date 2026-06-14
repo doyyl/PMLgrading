@@ -1,5 +1,3 @@
-
-
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useState } from 'react';
 import {
@@ -50,15 +48,15 @@ const NAV_BY_ROLE: Record<AppRole, NavItem[]> = {
   ],
 };
 
-const ROLE_LABEL: Record<AppRole, { label: string; color: string }> = {
-  admin:         { label: 'Admin',           color: 'bg-blue-100 text-blue-700' },
-  driver:        { label: 'พนักงานขับรถ',    color: 'bg-emerald-100 text-emerald-700' },
-  manager:       { label: 'ผู้จัดการระบบ',    color: 'bg-purple-100 text-purple-700' },
-  warehouse_op:  { label: 'Warehouse OP',    color: 'bg-orange-100 text-orange-700' },
-  supervisor:    { label: 'Supervisor',      color: 'bg-amber-100 text-amber-700' },
-  planner:       { label: 'Planner',         color: 'bg-teal-100 text-teal-700' },
-  logistics:     { label: 'Logistics',       color: 'bg-indigo-100 text-indigo-700' },
-  cs:            { label: 'Customer Service', color: 'bg-pink-100 text-pink-700' },
+const ROLE_LABEL: Record<AppRole, string> = {
+  admin:         'Admin',
+  driver:        'พนักงานขับรถ',
+  manager:       'ผู้จัดการระบบ',
+  warehouse_op:  'Warehouse OP',
+  supervisor:    'Supervisor',
+  planner:       'Planner',
+  logistics:     'Logistics',
+  cs:            'Customer Service',
 };
 
 export function Sidebar() {
@@ -68,10 +66,10 @@ export function Sidebar() {
   const { pathname } = useLocation();
 
   const nav = role ? NAV_BY_ROLE[role] : NAV_BY_ROLE.admin;
-  const roleInfo = role ? ROLE_LABEL[role] : null;
+  const roleLabel = role ? ROLE_LABEL[role] : null;
 
   function handleLogout() {
-    void signOutEverywhere(); // end the Supabase Auth session too
+    void signOutEverywhere();
     clearRole();
     navigate('/', { replace: true });
   }
@@ -79,21 +77,31 @@ export function Sidebar() {
   return (
     <>
       {/* Mobile top bar */}
-      <div className="fixed top-0 left-0 right-0 z-40 flex items-center gap-3 border-b border-gray-200 bg-white px-4 py-3 md:hidden">
-        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600 text-white font-bold text-xs">TMS</div>
-        <p className="font-bold text-gray-900 text-sm">KNS Transport</p>
-        <div className="ml-auto flex gap-1 items-center">
+      <div className="fixed left-0 right-0 top-0 z-40 flex items-center gap-3 border-b border-[#001840] bg-[#00205C] px-4 py-3 md:hidden">
+        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#FFB800] font-black text-[10px] text-[#00205C]">
+          KN
+        </div>
+        <p className="text-sm font-bold text-white">KNS Transport</p>
+        <div className="ml-auto flex items-center gap-1">
           {nav.map(({ href, icon: Icon }) => {
             const active = pathname === href;
             return (
-              <Link key={href} to={href}
-                className={cn('flex flex-col items-center rounded-lg p-1.5 text-[10px] font-medium transition-colors',
-                  active ? 'bg-blue-50 text-blue-600' : 'text-gray-500 hover:bg-gray-50')}>
+              <Link
+                key={href}
+                to={href}
+                className={cn(
+                  'flex flex-col items-center rounded-lg p-1.5 transition-colors',
+                  active ? 'text-[#FFB800]' : 'text-white/50 hover:text-white/80'
+                )}
+              >
                 <Icon className="h-4 w-4" />
               </Link>
             );
           })}
-          <button onClick={handleLogout} className="ml-1 rounded-lg p-1.5 text-gray-400 hover:bg-gray-50">
+          <button
+            onClick={handleLogout}
+            className="ml-1 rounded-lg p-1.5 text-white/30 transition-colors hover:text-red-400"
+          >
             <LogOut className="h-4 w-4" />
           </button>
         </div>
@@ -101,50 +109,64 @@ export function Sidebar() {
 
       {/* Desktop sidebar */}
       <aside className={cn(
-        'hidden md:flex h-screen flex-col border-r border-gray-200 bg-white transition-all duration-200',
+        'hidden md:flex h-screen flex-col bg-[#00205C] border-r border-[#001840] transition-all duration-200',
         collapsed ? 'w-16' : 'w-56'
       )}>
         {/* Logo */}
-        <div className={cn('flex items-center border-b border-gray-100 px-4 py-4',
-          collapsed ? 'justify-center' : 'gap-3')}>
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-white font-bold text-sm">
-            TMS
+        <div className={cn(
+          'flex items-center border-b border-white/[0.06] px-4 py-4',
+          collapsed ? 'justify-center' : 'gap-3'
+        )}>
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#FFB800] font-black text-sm text-[#00205C]">
+            KN
           </div>
           {!collapsed && (
             <div>
-              <p className="text-sm font-bold text-gray-900 leading-tight">KNS Logistics</p>
-              <p className="text-xs text-gray-400">Transport</p>
+              <p className="text-sm font-bold leading-tight text-white">KNS Logistics</p>
+              <p className="text-xs text-white/30">Transport</p>
             </div>
           )}
         </div>
 
         {/* Role badge */}
-        {!collapsed && roleInfo && (
-          <div className="px-4 pt-3 pb-1">
-            <div className={cn('inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold', roleInfo.color)}>
-              {roleInfo.label}
-              {driverName && <span className="opacity-70">· {driverName}</span>}
+        {!collapsed && roleLabel && (
+          <div className="px-3 pt-3 pb-1">
+            <div className="inline-flex max-w-full items-center gap-1.5 rounded-full bg-[#FFB800]/15 px-3 py-1">
+              <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[#FFB800]" />
+              <span className="truncate text-xs font-semibold text-[#FFB800]">
+                {roleLabel}{driverName ? ` · ${driverName}` : ''}
+              </span>
             </div>
           </div>
         )}
 
         {/* Nav */}
-        <nav className="flex-1 overflow-y-auto px-2 py-3 space-y-1">
+        <nav className="flex-1 overflow-y-auto px-2 py-3 space-y-0.5">
           {nav.map(({ href, icon: Icon, th, en }) => {
             const active = pathname === href;
             return (
-              <Link key={href} to={href}
+              <Link
+                key={href}
+                to={href}
                 title={collapsed ? `${th} (${en})` : undefined}
                 className={cn(
-                  'flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium transition-colors',
-                  active ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-600 hover:bg-gray-100',
-                  collapsed && 'justify-center px-2'
-                )}>
+                  'flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-150',
+                  active
+                    ? 'border-l-2 border-[#FFB800] bg-white/[0.08] pl-2.5 text-[#FFB800]'
+                    : 'border-l-2 border-transparent text-white/55 hover:bg-white/[0.05] hover:text-white/90',
+                  collapsed && 'justify-center border-l-0 px-2 pl-2'
+                )}
+              >
                 <Icon className="h-5 w-5 shrink-0" />
                 {!collapsed && (
-                  <div>
-                    <p className="leading-tight">{th}</p>
-                    <p className={cn('text-xs leading-tight', active ? 'text-blue-200' : 'text-gray-400')}>{en}</p>
+                  <div className="min-w-0">
+                    <p className="truncate leading-tight">{th}</p>
+                    <p className={cn(
+                      'truncate text-[11px] leading-tight',
+                      active ? 'text-[#FFB800]/60' : 'text-white/25'
+                    )}>
+                      {en}
+                    </p>
                   </div>
                 )}
               </Link>
@@ -156,9 +178,10 @@ export function Sidebar() {
         <button
           onClick={handleLogout}
           className={cn(
-            'flex items-center gap-2 border-t border-gray-100 px-4 py-3 text-xs text-gray-400 hover:bg-gray-50 hover:text-red-500 transition-colors',
+            'flex items-center gap-2 border-t border-white/[0.06] px-4 py-3 text-xs text-white/30 transition-colors hover:bg-white/[0.05] hover:text-red-400',
             collapsed && 'justify-center'
-          )}>
+          )}
+        >
           <LogOut className="h-4 w-4 shrink-0" />
           {!collapsed && <span>ออกจากระบบ</span>}
         </button>
@@ -166,10 +189,15 @@ export function Sidebar() {
         {/* Collapse toggle */}
         <button
           onClick={() => setCollapsed(!collapsed)}
-          className="flex items-center justify-center gap-2 border-t border-gray-100 px-4 py-3 text-xs text-gray-400 hover:bg-gray-50 hover:text-gray-600 transition-colors">
+          className={cn(
+            'flex items-center gap-2 border-t border-white/[0.06] px-4 py-3 text-xs text-white/20 transition-colors hover:bg-white/[0.05] hover:text-white/50',
+            collapsed ? 'justify-center' : ''
+          )}
+        >
           {collapsed
             ? <ChevronRight className="h-4 w-4" />
-            : <><ChevronLeft className="h-4 w-4" /><span>ย่อเมนู</span></>}
+            : <><ChevronLeft className="h-4 w-4" /><span>ย่อเมนู</span></>
+          }
         </button>
       </aside>
     </>
