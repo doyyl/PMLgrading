@@ -443,19 +443,10 @@ export default function ManagerPage() {
 
       {/* Search + Tabs */}
       <div className="space-y-3">
-        {tab !== 'jobs' && tab !== 'workload' && tab !== 'issues' && (
+        {tab !== 'workload' && tab !== 'issues' && (
           <input
             type="text"
-            placeholder="ค้นหา..."
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            className="w-full rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-        )}
-        {(tab === 'jobs') && (
-          <input
-            type="text"
-            placeholder="ค้นหาลูกค้า, เลขจอง, พนักงาน..."
+            placeholder={tab === 'jobs' ? 'ค้นหาลูกค้า, เลขจอง, พนักงาน...' : 'ค้นหา...'}
             value={search}
             onChange={e => setSearch(e.target.value)}
             className="w-full rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
