@@ -5,7 +5,9 @@ import { useState, type ReactNode } from 'react';
 import { RoleProvider, useRole, ROLE_HOME, type AppRole } from '@/context/role';
 import { AppShell } from '@/components/layout/AppShell';
 import LoginPage from '@/pages/LoginPage';
+import MenuPage from '@/pages/MenuPage';
 import DashboardPage from '@/pages/DashboardPage';
+import FuelPage from '@/pages/FuelPage';
 import BookingPage from '@/pages/BookingPage';
 import PlanningPage from '@/pages/PlanningPage';
 import TrackingPage from '@/pages/TrackingPage';
@@ -29,6 +31,7 @@ function AppRoutes() {
     <Routes>
       <Route path="/" element={<LoginPage />} />
       <Route path="/login" element={<Navigate to="/" replace />} />
+      <Route path="/menu" element={<MenuPage />} />
       <Route element={<AppShell />}>
         <Route path="/dashboard" element={
           <RequireRole roles={['admin', 'manager']}><DashboardPage /></RequireRole>
@@ -47,6 +50,9 @@ function AppRoutes() {
         } />
         <Route path="/driver" element={
           <RequireRole roles={['driver']}><DriverPage /></RequireRole>
+        } />
+        <Route path="/fuel" element={
+          <RequireRole roles={['driver']}><FuelPage /></RequireRole>
         } />
         <Route path="/manager" element={
           <RequireRole roles={['manager']}><ManagerPage /></RequireRole>

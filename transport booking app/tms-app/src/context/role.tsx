@@ -12,16 +12,17 @@ export type AppRole =
   | 'logistics'      // booking, loading, vendor/freight, release
   | 'cs';            // customer service — booking, docs, special instructions
 
-// Default landing page per role — used by login redirect and route guards
+// Default landing page per role — the post-login menu hub (MenuPage).
+// Every role lands on /menu and picks a function from there.
 export const ROLE_HOME: Record<AppRole, string> = {
-  admin:        '/dashboard',
-  driver:       '/driver',
-  manager:      '/manager',
-  warehouse_op: '/wms/packout',
-  supervisor:   '/wms/warehouse-daily',
-  planner:      '/wms/planning',
-  logistics:    '/outbound/domestic',
-  cs:           '/outbound/domestic',
+  admin:        '/menu',
+  driver:       '/menu',
+  manager:      '/menu',
+  warehouse_op: '/menu',
+  supervisor:   '/menu',
+  planner:      '/menu',
+  logistics:    '/menu',
+  cs:           '/menu',
 };
 
 export interface AppUser {
