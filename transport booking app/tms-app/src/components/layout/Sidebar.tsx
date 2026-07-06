@@ -3,7 +3,7 @@ import { useState } from 'react';
 import {
   LayoutDashboard, CalendarPlus, MapPin, Activity,
   Leaf, ChevronLeft, ChevronRight, Truck, BarChart3, LogOut,
-  Package, ClipboardList, Settings2, Send, Headphones,
+  Package, ClipboardList, Settings2, Send, Headphones, Fuel, LayoutGrid,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useRole, type AppRole } from '@/context/role';
@@ -20,6 +20,7 @@ const NAV_BY_ROLE: Record<AppRole, NavItem[]> = {
   ],
   driver: [
     { href: '/driver',    icon: Truck,           th: 'ตารางงานฉัน', en: 'My Shifts' },
+    { href: '/fuel',      icon: Fuel,            th: 'เติมน้ำมัน',   en: 'Fuel' },
   ],
   manager: [
     { href: '/manager',   icon: BarChart3,       th: 'ภาพรวมระบบ',  en: 'Overview' },
@@ -65,7 +66,8 @@ export function Sidebar() {
   const navigate = useNavigate();
   const { pathname } = useLocation();
 
-  const nav = role ? NAV_BY_ROLE[role] : NAV_BY_ROLE.admin;
+  const MENU_ITEM: NavItem = { href: '/menu', icon: LayoutGrid, th: 'เมนูหลัก', en: 'Menu' };
+  const nav = [MENU_ITEM, ...(role ? NAV_BY_ROLE[role] : NAV_BY_ROLE.admin)];
   const roleLabel = role ? ROLE_LABEL[role] : null;
 
   function handleLogout() {
